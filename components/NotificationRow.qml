@@ -79,8 +79,8 @@ CursorSurface {
     id: row
     anchors.left: parent.left
     anchors.right: actionBtn.left
-    anchors.leftMargin: root.edgeMargin
-    anchors.rightMargin: root.edgeMargin
+    anchors.leftMargin: root.edgeMargin + Style.space(4)
+    anchors.rightMargin: Style.space(8)
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(10)
 
@@ -176,23 +176,21 @@ CursorSurface {
   Rectangle {
     id: actionBtn
     anchors.right: parent.right
-    anchors.rightMargin: root.edgeMargin
-    anchors.verticalCenter: parent.verticalCenter
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
     z: 2
-    width: Style.space(72)
-    height: Style.space(26)
-    radius: Style.cornerRadius
+    width: Style.space(40)
     opacity: root.actionEnabled ? 1.0 : 0.45
     color: actionMouse.containsMouse && root.actionEnabled
       ? (root.danger ? Util.alpha(Color.urgent, Style.hoverFillAlpha) : Style.hoverFillFor(root.contentForeground, Color.accent, Color.urgent))
-      : Style.normalFillFor(root.contentForeground, Color.accent, Color.urgent)
+      : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06)
 
     Text {
       anchors.centerIn: parent
-      text: root.actionLabel
-      color: root.contentForeground
+      text: root.danger ? "\uDB80\uDDB4" : "\uDB80\uDC6F"
+      color: actionMouse.containsMouse && root.danger ? Color.urgent : root.contentForeground
       font.family: root.contentFontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.icon
     }
 
     MouseArea {
@@ -203,6 +201,12 @@ CursorSurface {
       cursorShape: root.actionEnabled ? Qt.PointingHandCursor : Qt.ArrowCursor
       onContainsMouseChanged: if (containsMouse) root.rowHovered()
       onClicked: root.actionClicked()
+    }
+
+    PanelToolTip {
+      visible: actionMouse.containsMouse && root.actionEnabled
+      text: root.actionLabel
+      fontFamily: root.contentFontFamily
     }
   }
 }

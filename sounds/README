@@ -1,3 +1,6 @@
-Sounds come from the freedesktop theme via canberra-gtk-play
-(message-new-instant, message-new-email, dialog-warning, complete,
-camera-shutter). Nothing is bundled here.
+Sounds come from the freedesktop theme shipped with Omarchy:
+
+  /usr/share/sounds/freedesktop/stereo/*.oga
+
+Playback is pw-play of that file (canberra-gtk-play as fallback).
+Nothing is bundled here. Channel-test clips are omitted.

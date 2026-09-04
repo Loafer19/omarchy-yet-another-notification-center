@@ -28,6 +28,8 @@ Panel {
   property string settingsFilter: "general"
   property string filter: ""
   property bool searching: false
+  property bool settingsPopupOpen: false
+  property bool settingsFieldFocus: false
   property double now: Date.now()
   property double readMark: 0
   property var store: null
@@ -152,12 +154,28 @@ Panel {
   function rebuildSettings() {
     settingRows.clear()
     var c = cfg
+    function addRow(row) {
+      settingRows.append({
+        key: row.key,
+        kind: row.kind,
+        title: row.title,
+        subtitle: row.subtitle || "",
+        app: row.app || "",
+        optionSet: row.optionSet || "",
+        currentValue: row.currentValue || "",
+        checked: row.checked === true,
+        numericValue: row.numericValue || 0,
+        min: row.min || 0,
+        max: row.max || 0,
+        step: row.step || 1
+      })
+    }
     if (settingsFilter === "sound") {
-      settingRows.append({ key: "soundEnabled", kind: "toggle", title: "Play a sound", subtitle: "Omarchy's daemon is silent — this plays one when a notification arrives", valueLabel: boolLabel(!!c.soundEnabled) })
-      settingRows.append({ key: "soundCritical", kind: "enum", title: "Critical", subtitle: "Omarchy -u critical — never auto-expires on its own", valueLabel: Model.soundLabel(c.soundCritical || "warning") })
-      settingRows.append({ key: "soundNormal", kind: "enum", title: "Normal", subtitle: "The usual desktop notification", valueLabel: Model.soundLabel(c.soundNormal || c.defaultSound || "message") })
-      settingRows.append({ key: "soundLow", kind: "enum", title: "Low", subtitle: "Omarchy -u low — quiet toasts", valueLabel: Model.soundLabel(c.soundLow || "complete") })
-      settingRows.append({ key: "muteSoundWhenDnd", kind: "toggle", title: "Mute while Do Not Disturb", subtitle: "Still archives the notification", valueLabel: boolLabel(!!c.muteSoundWhenDnd) })
+      addRow({ key: "soundEnabled", kind: "toggle", title: "Play a sound", subtitle: "Omarchy's daemon is silent — this plays one when a notification arrives", checked: !!c.soundEnabled })
+      addRow({ key: "soundCritical", kind: "enum", title: "Critical", subtitle: "Omarchy -u critical", optionSet: "sound", currentValue: Model.canonicalSound(c.soundCritical || "dialog-warning") })
+      addRow({ key: "soundNormal", kind: "enum", title: "Normal", subtitle: "The usual desktop notification", optionSet: "sound", currentValue: Model.canonicalSound(c.soundNormal || c.defaultSound || "message-new-instant") })
+      addRow({ key: "soundLow", kind: "enum", title: "Low", subtitle: "Omarchy -u low", optionSet: "sound", currentValue: Model.canonicalSound(c.soundLow || "complete") })
+      addRow({ key: "muteSoundWhenDnd", kind: "toggle", title: "Mute while Do Not Disturb", subtitle: "No sound while DND is on. History still records them.", checked: !!c.muteSoundWhenDnd })
       return
     }
     if (settingsFilter === "apps") {
@@ -165,24 +183,26 @@ Panel {
       for (var i = 0; i < apps.length; i++) {
         var app = apps[i].app
         var current = (c.appSounds && c.appSounds[app]) ? c.appSounds[app] : "inherit"
-        settingRows.append({
+        addRow({
           key: "app:" + app,
           kind: "appSound",
           title: app,
-          subtitle: (apps[i].count || 1) + " in archive · − / + to pick a sound",
-          valueLabel: Model.soundLabel(current),
-          app: app
+          subtitle: (apps[i].count || 1) + " in archive",
+          app: app,
+          optionSet: "appSound",
+          currentValue: current
         })
       }
       return
     }
-    settingRows.append({ key: "displayLimit", kind: "step", title: "Show at most", subtitle: "Cards on the History tab · − / +", valueLabel: String(c.displayLimit || 50), min: 10, max: 500, step: 10 })
-    settingRows.append({ key: "keepDays", kind: "step", title: "Keep history for", subtitle: "Days. Older entries are deleted", valueLabel: String(c.keepDays || 30) + " days", min: 1, max: 365, step: 1 })
-    settingRows.append({ key: "maxItems", kind: "step", title: "Keep at most", subtitle: "Archive ceiling, regardless of age", valueLabel: String(c.maxItems || 1000), min: 50, max: 10000, step: 50 })
-    settingRows.append({ key: "clickAction", kind: "enum", title: "Clicking a notification", subtitle: "Never runs the sender's command", valueLabel: String(c.clickAction || "Auto") })
-    settingRows.append({ key: "showBody", kind: "toggle", title: "Show the message text", subtitle: "Off leaves the sender and subject", valueLabel: boolLabel(!!c.showBody) })
-    settingRows.append({ key: "showPreview", kind: "toggle", title: "Show pictures", subtitle: "Off stops keeping copies of new ones", valueLabel: boolLabel(!!c.showPreview) })
-    settingRows.append({ key: "badge", kind: "enum", title: "Unread mark", subtitle: "Dot, Highlight, Count, or None", valueLabel: String(c.badge || "Dot") })
+    addRow({ key: "displayLimit", kind: "step", title: "Show at most", subtitle: "Cards on the History tab", numericValue: Number(c.displayLimit || 50), min: 10, max: 500, step: 10 })
+    addRow({ key: "keepDays", kind: "step", title: "Keep history for", subtitle: "Days. Older entries are deleted", numericValue: Number(c.keepDays || 30), min: 1, max: 365, step: 1 })
+    addRow({ key: "trashDays", kind: "step", title: "Keep trash for", subtitle: "Days. Then purged for good", numericValue: Number(c.trashDays || 30), min: 1, max: 365, step: 1 })
+    addRow({ key: "maxItems", kind: "step", title: "Keep at most", subtitle: "Archive ceiling, regardless of age", numericValue: Number(c.maxItems || 1000), min: 50, max: 10000, step: 50 })
+    addRow({ key: "clickAction", kind: "enum", title: "Clicking a notification", subtitle: "Never runs the sender's command", optionSet: "clickAction", currentValue: String(c.clickAction || "Auto") })
+    addRow({ key: "showBody", kind: "toggle", title: "Show the message text", subtitle: "Off leaves the sender and subject", checked: !!c.showBody })
+    addRow({ key: "showPreview", kind: "toggle", title: "Show pictures", subtitle: "Off stops keeping copies of new ones", checked: !!c.showPreview })
+    addRow({ key: "badge", kind: "enum", title: "Unread mark", subtitle: "On the bar bell", optionSet: "badge", currentValue: String(c.badge || "Dot") })
   }
 
   property bool cursorActive: false
@@ -348,9 +368,11 @@ Panel {
       store.setSetting("clickAction", Model.cycle(["Auto", "Focus the app", "Nothing"], cfg.clickAction, delta))
     else if (row.kind === "enum" && row.key === "badge")
       store.setSetting("badge", Model.cycle(["Dot", "Highlight", "Count", "None"], cfg.badge, delta))
-    else if (row.kind === "enum" && (row.key === "defaultSound" || row.key === "soundLow" || row.key === "soundNormal" || row.key === "soundCritical"))
-      store.setSetting(row.key, Model.cycle(Model.SOUND_IDS, cfg[row.key], delta))
-    else if (row.kind === "appSound") {
+    else if (row.kind === "enum" && (row.key === "defaultSound" || row.key === "soundLow" || row.key === "soundNormal" || row.key === "soundCritical")) {
+      var soundNext = Model.cycle(Model.SOUND_IDS, cfg[row.key], delta)
+      store.setSetting(row.key, soundNext)
+      store.playSound(soundNext)
+    } else if (row.kind === "appSound") {
       var cur = (cfg.appSounds && cfg.appSounds[row.app]) ? cfg.appSounds[row.app] : "inherit"
       store.setAppSound(row.app, Model.cycle(["inherit"].concat(Model.SOUND_IDS), cur, delta))
     }
@@ -459,7 +481,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.searching
+      blocked: root.searching || root.settingsPopupOpen || root.settingsFieldFocus
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.cycleTab(direction) }
       onMoveRequested: function(dx, dy) { root.moveCursor(dx, dy) }
@@ -517,18 +539,22 @@ Panel {
             spacing: Style.space(6)
 
             Yanc.HeaderChip {
-              text: root.dnd ? "DND" : "DND off"
+              text: "DND"
               on: root.dnd
               contentForeground: root.contentForeground
               contentFontFamily: root.contentFontFamily
+              tooltipText: root.dnd ? "Allow notifications" : "Silence notifications"
               onClicked: root.toggleDnd()
             }
 
             Yanc.HeaderChip {
-              text: root.autoHideOn ? "Auto-hide" : "Auto-hide off"
+              text: "Auto-hide"
               on: root.autoHideOn
               contentForeground: root.contentForeground
               contentFontFamily: root.contentFontFamily
+              tooltipText: root.autoHideOn
+                ? "Toasts stay up — Omarchy never expires critical on its own"
+                : "Hide all toasts automatically, including critical"
               onClicked: root.toggleAutoHide()
             }
 
@@ -537,6 +563,7 @@ Panel {
               text: "Clear"
               contentForeground: root.contentForeground
               contentFontFamily: root.contentFontFamily
+              tooltipText: "Move everything in History to Trash"
               onClicked: if (store) store.clearAll()
             }
           }
@@ -560,7 +587,11 @@ Panel {
             anchors.left: parent.left
             anchors.leftMargin: root.edgeMargin
             anchors.verticalCenter: parent.verticalCenter
-            text: trashRows.count === 0 ? "Empty · kept 30 days" : trashRows.count + " in trash · 30 days"
+            text: {
+              var days = Number(root.cfg.trashDays || 30)
+              var kept = days === 1 ? "1 day" : days + " days"
+              return trashRows.count === 0 ? "Empty · kept " + kept : trashRows.count + " in trash · " + kept
+            }
             color: Qt.darker(root.contentForeground, 1.5)
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.caption
@@ -572,9 +603,9 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             visible: trashRows.count > 0
             text: "Empty trash"
-            danger: true
             contentForeground: root.contentForeground
             contentFontFamily: root.contentFontFamily
+            tooltipText: "Delete trash forever"
             onClicked: if (store) store.emptyTrash()
           }
         }
@@ -627,24 +658,6 @@ Panel {
           clip: true
           spacing: Style.space(6)
           model: historyRows
-          section.property: "day"
-          section.criteria: ViewSection.FullString
-          section.delegate: Item {
-            required property string section
-            width: ListView.view.width
-            height: dayLabel.implicitHeight + Style.space(10)
-            Text {
-              id: dayLabel
-              anchors.left: parent.left
-              anchors.leftMargin: root.edgeMargin
-              anchors.bottom: parent.bottom
-              text: parent.section.toUpperCase()
-              color: Qt.darker(root.contentForeground, 1.5)
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-          }
           delegate: Item {
             id: historyWrap
             required property int index
@@ -769,10 +782,18 @@ Panel {
           delegate: Item {
             id: settingWrap
             required property int index
+            required property string key
             required property string title
             required property string subtitle
-            required property string valueLabel
             required property string kind
+            required property string app
+            required property string optionSet
+            required property string currentValue
+            required property bool checked
+            required property int numericValue
+            required property int min
+            required property int max
+            required property int step
             width: ListView.view.width
             height: settingCard.height
             Yanc.SettingRow {
@@ -780,8 +801,14 @@ Panel {
               width: parent.width
               title: settingWrap.title
               subtitle: settingWrap.subtitle
-              valueLabel: settingWrap.valueLabel
               kind: settingWrap.kind
+              checked: settingWrap.checked
+              currentValue: settingWrap.currentValue
+              optionSet: settingWrap.optionSet
+              numericValue: settingWrap.numericValue
+              numericMin: settingWrap.min
+              numericMax: settingWrap.max
+              numericStep: settingWrap.step
               contentForeground: root.contentForeground
               contentFontFamily: root.contentFontFamily
               edgeMargin: root.edgeMargin
@@ -791,14 +818,24 @@ Panel {
                 root.setRowCursor(settingWrap.index)
                 root.nudgeSetting(1)
               }
-              onDecrementClicked: {
+              onValuePicked: function(v) {
                 root.setRowCursor(settingWrap.index)
-                root.nudgeSetting(-1)
+                if (settingWrap.optionSet === "sound" || settingWrap.optionSet === "appSound") {
+                  if (root.store) root.store.playSound(v)
+                }
+                if (settingWrap.kind === "appSound") root.store.setAppSound(settingWrap.app, v)
+                else root.store.setSetting(settingWrap.key, v)
               }
-              onIncrementClicked: {
+              onPlayClicked: {
                 root.setRowCursor(settingWrap.index)
-                root.nudgeSetting(1)
+                if (root.store) root.store.playSound(settingWrap.currentValue)
               }
+              onNumberPicked: function(v) {
+                root.setRowCursor(settingWrap.index)
+                root.store.setSetting(settingWrap.key, v)
+              }
+              onPopupOpenChanged: function(open) { root.settingsPopupOpen = open }
+              onFieldFocusChanged: function(on) { root.settingsFieldFocus = on }
             }
           }
         }

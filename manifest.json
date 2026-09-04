@@ -44,7 +44,7 @@
         "max": 365,
         "step": 1,
         "defaultValue": 30,
-        "description": "Days. Older history is deleted. Trash is always 30 days."
+        "description": "Days. Older history is deleted."
       },
       {
         "key": "displayLimit",

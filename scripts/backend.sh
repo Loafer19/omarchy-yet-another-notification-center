@@ -41,10 +41,10 @@ default_settings_json() {
   "trashDays": 30,
   "autoHideMs": 0,
   "soundEnabled": true,
-  "defaultSound": "message",
+  "defaultSound": "message-new-instant",
   "soundLow": "complete",
-  "soundNormal": "message",
-  "soundCritical": "warning",
+  "soundNormal": "message-new-instant",
+  "soundCritical": "dialog-warning",
   "muteSoundWhenDnd": true,
   "appSounds": {},
   "badge": "Dot",
@@ -450,29 +450,26 @@ cmd_apps() {
 
 sound_event() {
   case $1 in
-    message) printf '%s' "message-new-instant" ;;
-    email) printf '%s' "message-new-email" ;;
+    email) printf '%s' "message-new-instant" ;;
     warning) printf '%s' "dialog-warning" ;;
-    complete) printf '%s' "complete" ;;
     camera) printf '%s' "camera-shutter" ;;
     mute|"") printf '%s' "" ;;
-    *) printf '%s' "message-new-instant" ;;
+    *) printf '%s' "$1" ;;
   esac
 }
 
 cmd_play_sound() {
-  local id=${1:-message} event
+  local id=${1:-message-new-instant} event file
   event=$(sound_event "$id")
   [[ -n $event ]] || { printf '{"ok":true,"played":false}\n'; return 0; }
-  if command -v canberra-gtk-play >/dev/null 2>&1; then
-    canberra-gtk-play -i "$event" >/dev/null 2>&1 &
+  file="/usr/share/sounds/freedesktop/stereo/${event}.oga"
+  if [[ -f $file ]] && command -v pw-play >/dev/null 2>&1; then
+    pw-play "$file" >/dev/null 2>&1 &
     printf '{"ok":true,"played":true,"id":%s}\n' "$(printf '%s' "$id" | jq -Rs .)"
     return 0
   fi
-  local file="/usr/share/sounds/freedesktop/stereo/${event}.oga"
-  [[ -f $file ]] || file="/usr/share/sounds/freedesktop/stereo/message.oga"
-  if command -v pw-play >/dev/null 2>&1 && [[ -f $file ]]; then
-    pw-play "$file" >/dev/null 2>&1 &
+  if command -v canberra-gtk-play >/dev/null 2>&1; then
+    canberra-gtk-play -i "$event" >/dev/null 2>&1 &
     printf '{"ok":true,"played":true,"id":%s}\n' "$(printf '%s' "$id" | jq -Rs .)"
     return 0
   fi
@@ -560,7 +557,7 @@ yoyo.notification-center store
   settings-get
   settings-set JSON
   apps               apps seen in history+trash
-  play-sound ID      message|email|warning|complete|camera|mute
+  play-sound ID      freedesktop event name, or mute
   seed [N]
   prune
 USAGE

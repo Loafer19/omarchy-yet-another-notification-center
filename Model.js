@@ -7,10 +7,10 @@ var DEFAULTS = {
   trashDays: 30,
   autoHideMs: 0,
   soundEnabled: true,
-  defaultSound: "message",
+  defaultSound: "message-new-instant",
   soundLow: "complete",
-  soundNormal: "message",
-  soundCritical: "warning",
+  soundNormal: "message-new-instant",
+  soundCritical: "dialog-warning",
   muteSoundWhenDnd: true,
   appSounds: {},
   badge: "Dot",
@@ -19,15 +19,41 @@ var DEFAULTS = {
   showPreview: true
 }
 
-var SOUND_IDS = ["message", "email", "warning", "complete", "camera", "mute"]
+var SOUND_IDS = [
+  "mute",
+  "message-new-instant",
+  "dialog-warning",
+  "dialog-error",
+  "complete",
+  "bell",
+  "camera-shutter",
+  "alarm-clock-elapsed",
+  "phone-incoming-call"
+]
 var SOUND_LABELS = {
-  message: "Message",
-  email: "Email",
-  warning: "Warning",
-  complete: "Complete",
-  camera: "Camera",
   mute: "Mute",
+  "message-new-instant": "Message",
+  "dialog-warning": "Warning",
+  "dialog-error": "Error",
+  complete: "Complete",
+  bell: "Bell",
+  "camera-shutter": "Camera",
+  "alarm-clock-elapsed": "Alarm",
+  "phone-incoming-call": "Call",
   inherit: "Default"
+}
+
+function canonicalSound(id) {
+  var s = String(id || "")
+  if (s === "email" || s === "message") return "message-new-instant"
+  if (s === "warning") return "dialog-warning"
+  if (s === "camera") return "camera-shutter"
+  if (s === "inherit" || s === "") return s
+  var i
+  for (i = 0; i < SOUND_IDS.length; i++) {
+    if (SOUND_IDS[i] === s) return s
+  }
+  return "message-new-instant"
 }
 
 function mergeSettings(raw) {
@@ -39,8 +65,10 @@ function mergeSettings(raw) {
     if (raw[key] === undefined || raw[key] === null) continue
     if (key === "appSounds" && typeof raw[key] === "object") {
       var sounds = {}
-      for (var app in raw[key]) sounds[app] = String(raw[key][app] || "")
+      for (var app in raw[key]) sounds[app] = canonicalSound(raw[key][app])
       out.appSounds = sounds
+    } else if (key === "soundLow" || key === "soundNormal" || key === "soundCritical" || key === "defaultSound") {
+      out[key] = canonicalSound(raw[key])
     } else {
       out[key] = raw[key]
     }
@@ -66,29 +94,23 @@ function parseJsonObject(text) {
   }
 }
 
-var WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+var MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 function pad2(n) {
   return (n < 10 ? "0" : "") + n
 }
 
-function formatTime(timestamp) {
-  var d = new Date(Number(timestamp) || 0)
-  return pad2(d.getHours()) + ":" + pad2(d.getMinutes())
-}
-
-function dayOf(timestamp, nowMs) {
+function formatTime(timestamp, nowMs) {
   var when = new Date(Number(timestamp) || 0)
   var now = nowMs ? new Date(nowMs) : new Date()
-  var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  var ts = when.getTime()
-  if (ts >= midnight) return "Today"
-  if (ts >= midnight - 86400000) return "Yesterday"
-  if (ts >= midnight - 6 * 86400000) return WEEKDAYS[when.getDay()]
-  var label = when.getDate() + " " + MONTHS[when.getMonth()]
-  if (when.getFullYear() !== now.getFullYear()) label += " " + when.getFullYear()
-  return label
+  var clock = pad2(when.getHours()) + ":" + pad2(when.getMinutes())
+  var sameDay = when.getFullYear() === now.getFullYear()
+    && when.getMonth() === now.getMonth()
+    && when.getDate() === now.getDate()
+  if (sameDay) return clock
+  var day = when.getDate() + " " + MONTHS_SHORT[when.getMonth()]
+  if (when.getFullYear() !== now.getFullYear()) day += " " + when.getFullYear()
+  return day + " " + clock
 }
 
 function rowFor(entry, nowMs) {
@@ -106,8 +128,7 @@ function rowFor(entry, nowMs) {
     urgency: (e.urgency === undefined || e.urgency === null) ? 1 : Number(e.urgency),
     timestamp: Number(e.timestamp || 0),
     trashedAt: Number(e.trashedAt || 0),
-    day: dayOf(e.timestamp, nowMs),
-    time: formatTime(e.timestamp)
+    time: formatTime(e.timestamp, nowMs)
   }
 }
 
@@ -193,12 +214,40 @@ function soundFor(entry, settings) {
   var override = cfg.appSounds && app ? cfg.appSounds[app] : ""
   if (override) return String(override)
   var n = urgencyLevel(entry && entry.urgency)
-  if (n === 2) return String(cfg.soundCritical || "warning")
-  if (n === 0) return String(cfg.soundLow || "complete")
-  return String(cfg.soundNormal || cfg.defaultSound || "message")
+  if (n === 2) return canonicalSound(cfg.soundCritical || "dialog-warning")
+  if (n === 0) return canonicalSound(cfg.soundLow || "complete")
+  return canonicalSound(cfg.soundNormal || cfg.defaultSound || "message-new-instant")
 }
 
 function soundLabel(id) {
   var key = String(id || "inherit")
   return SOUND_LABELS[key] || key
+}
+
+function optionsFor(set) {
+  if (set === "clickAction") {
+    return [
+      { value: "Auto", label: "Auto" },
+      { value: "Focus the app", label: "Focus the app" },
+      { value: "Nothing", label: "Nothing" }
+    ]
+  }
+  if (set === "badge") {
+    return [
+      { value: "Dot", label: "Dot" },
+      { value: "Highlight", label: "Highlight" },
+      { value: "Count", label: "Count" },
+      { value: "None", label: "None" }
+    ]
+  }
+  var sounds = []
+  var i
+  if (set === "appSound") sounds.push({ value: "inherit", label: "Default" })
+  if (set === "sound" || set === "appSound") {
+    for (i = 0; i < SOUND_IDS.length; i++) {
+      sounds.push({ value: SOUND_IDS[i], label: soundLabel(SOUND_IDS[i]) })
+    }
+    return sounds
+  }
+  return []
 }

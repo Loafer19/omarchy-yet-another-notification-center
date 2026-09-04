@@ -145,7 +145,7 @@ Item {
   }
 
   function playSound(id) {
-    if (!id || id === "mute") return
+    if (!id || id === "mute" || id === "inherit") return
     Quickshell.execDetached(root.storeCommand(["play-sound", String(id)]))
   }
 

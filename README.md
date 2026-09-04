@@ -2,6 +2,8 @@
 
 Omarchy bar widget: history, a 30-day trash, sounds, and auto-hide for toasts.
 
+![History tab](preview.png)
+
 It does **not** replace `omarchy.notifications`. There is always exactly one
 D-Bus notification daemon (`org.freedesktop.Notifications`). On Omarchy that
 is the first-party service. This plugin watches the files it already writes,
@@ -22,7 +24,8 @@ have nothing to archive.
 
 Auto-hide and sound sit on top of the daemon: auto-hide dismisses the live
 toast stack after a timeout (including critical, which Omarchy never expires);
-sound plays a freedesktop event when a notification is archived.
+sound plays a clip from `/usr/share/sounds/freedesktop/stereo/` when a
+notification is archived. Settings → Sound has Play on each mapping.
 
 ## Install
 
@@ -49,10 +52,9 @@ Right-click the bell for Do Not Disturb.
   urgency (`-u low|normal|critical`): All / Critical / Normal / Low.
   Critical cards get a red stripe. `/` search. Dismiss → trash.
   Header: DND, Auto-hide, Clear (everything visible goes to trash).
-- **Trash** — 30 days, then purged. Restore or empty.
+- **Trash** — kept for the days set in Settings, then purged. Restore or empty.
 - **Settings** — General (display limit, retention, click, badge), Sound
   (master and a clip per urgency), and Apps (per-app overrides as apps appear).
-  Steppers use − / + (right-click also goes down).
 
 **Tab** cycles tabs · **h/l** chips · **j/k** rows · **Enter** acts · **x**
 trashes / purges · **Esc** closes.
