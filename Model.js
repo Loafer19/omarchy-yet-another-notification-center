@@ -8,6 +8,9 @@ var DEFAULTS = {
   autoHideMs: 0,
   soundEnabled: true,
   defaultSound: "message",
+  soundLow: "complete",
+  soundNormal: "message",
+  soundCritical: "warning",
   muteSoundWhenDnd: true,
   appSounds: {},
   badge: "Dot",
@@ -100,7 +103,7 @@ function rowFor(entry, nowMs) {
     preview: String(e.preview || ""),
     file: String(e.file || ""),
     glyph: String(e.glyph || ""),
-    urgency: Number(e.urgency || 0),
+    urgency: (e.urgency === undefined || e.urgency === null) ? 1 : Number(e.urgency),
     timestamp: Number(e.timestamp || 0),
     trashedAt: Number(e.trashedAt || 0),
     day: dayOf(e.timestamp, nowMs),
@@ -154,14 +157,45 @@ function clampInt(value, min, max, fallback) {
   return n
 }
 
+// Quickshell NotificationUrgency, same as Omarchy's cards: Low=0, Normal=1, Critical=2.
+function urgencyLevel(value) {
+  var n = Number(value)
+  if (!isFinite(n)) return 1
+  if (n >= 2) return 2
+  if (n <= 0) return 0
+  return 1
+}
+
+function urgencyName(value) {
+  var n = urgencyLevel(value)
+  if (n === 2) return "critical"
+  if (n === 0) return "low"
+  return "normal"
+}
+
+function urgencyLabel(value) {
+  var n = urgencyLevel(value)
+  if (n === 2) return "Critical"
+  if (n === 0) return "Low"
+  return "Normal"
+}
+
+function matchesUrgency(entry, filter) {
+  var key = String(filter || "all")
+  if (key === "" || key === "all") return true
+  return urgencyName(entry && entry.urgency) === key
+}
+
 function soundFor(entry, settings) {
   var cfg = settings || DEFAULTS
   if (!cfg.soundEnabled) return "mute"
   var app = String((entry && entry.app) || "")
   var override = cfg.appSounds && app ? cfg.appSounds[app] : ""
   if (override) return String(override)
-  if (Number((entry && entry.urgency) || 0) >= 3) return "warning"
-  return String(cfg.defaultSound || "message")
+  var n = urgencyLevel(entry && entry.urgency)
+  if (n === 2) return String(cfg.soundCritical || "warning")
+  if (n === 0) return String(cfg.soundLow || "complete")
+  return String(cfg.soundNormal || cfg.defaultSound || "message")
 }
 
 function soundLabel(id) {

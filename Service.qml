@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "Model.js" as Model
 
 Item {
   id: root
@@ -167,10 +168,7 @@ Item {
     if (!cfg.soundEnabled) return
     var n = root.notificationService()
     if (cfg.muteSoundWhenDnd && n && n.doNotDisturb) return
-    var app = String(entry.app || "")
-    var id = (cfg.appSounds && cfg.appSounds[app]) ? cfg.appSounds[app] : ""
-    if (!id) id = Number(entry.urgency || 0) >= 3 ? "warning" : (cfg.defaultSound || "message")
-    root.playSound(id)
+    root.playSound(Model.soundFor(entry, cfg))
   }
 
   function hideAllToasts() {
@@ -291,7 +289,7 @@ Item {
         var data
         try { data = JSON.parse(text) } catch (e) { return }
         if (!data || typeof data !== "object") return
-        root.cfg = data
+        root.cfg = Model.mergeSettings(data)
         root.settingsChanged()
       }
     }

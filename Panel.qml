@@ -24,6 +24,7 @@ Panel {
   readonly property int edgeMargin: Style.space(6)
 
   property string activeTab: "history"
+  property string historyFilter: "all"
   property string settingsFilter: "general"
   property string filter: ""
   property bool searching: false
@@ -35,6 +36,12 @@ Panel {
     { key: "history", label: "History" },
     { key: "trash", label: "Trash" },
     { key: "settings", label: "Settings" }
+  ]
+  readonly property var historyChips: [
+    { key: "all", label: "All" },
+    { key: "critical", label: "Critical" },
+    { key: "normal", label: "Normal" },
+    { key: "low", label: "Low" }
   ]
   readonly property var settingsChips: [
     { key: "general", label: "General" },
@@ -127,7 +134,7 @@ Panel {
     historyRows.clear()
     var list = entries || []
     for (var i = 0; i < list.length; i++) {
-      if (Model.matches(list[i], filter))
+      if (Model.matches(list[i], filter) && Model.matchesUrgency(list[i], root.historyFilter))
         historyRows.append(Model.rowFor(list[i], now))
     }
   }
@@ -146,7 +153,9 @@ Panel {
     var c = cfg
     if (settingsFilter === "sound") {
       settingRows.append({ key: "soundEnabled", kind: "toggle", title: "Play a sound", subtitle: "Omarchy's daemon is silent — this plays one when a notification arrives", valueLabel: boolLabel(!!c.soundEnabled) })
-      settingRows.append({ key: "defaultSound", kind: "enum", title: "Default sound", subtitle: "Used unless an app below overrides it", valueLabel: Model.soundLabel(c.defaultSound) })
+      settingRows.append({ key: "soundCritical", kind: "enum", title: "Critical", subtitle: "Omarchy -u critical — never auto-expires on its own", valueLabel: Model.soundLabel(c.soundCritical || "warning") })
+      settingRows.append({ key: "soundNormal", kind: "enum", title: "Normal", subtitle: "The usual desktop notification", valueLabel: Model.soundLabel(c.soundNormal || c.defaultSound || "message") })
+      settingRows.append({ key: "soundLow", kind: "enum", title: "Low", subtitle: "Omarchy -u low — quiet toasts", valueLabel: Model.soundLabel(c.soundLow || "complete") })
       settingRows.append({ key: "muteSoundWhenDnd", kind: "toggle", title: "Mute while Do Not Disturb", subtitle: "Still archives the notification", valueLabel: boolLabel(!!c.muteSoundWhenDnd) })
       var apps = store && store.apps ? store.apps : []
       for (var i = 0; i < apps.length; i++) {
@@ -176,12 +185,35 @@ Panel {
   property string focusSection: "rows"
   property int selectedIndex: 0
 
-  readonly property var activeFilterChips: root.activeTab === "settings" ? root.settingsChips : []
+  readonly property var activeFilterChips: {
+    if (root.activeTab === "history") return root.historyChips
+    if (root.activeTab === "settings") return root.settingsChips
+    return []
+  }
   readonly property int activeListCount: {
     if (root.activeTab === "history") return historyRows.count
     if (root.activeTab === "trash") return trashRows.count
     if (root.activeTab === "settings") return settingRows.count
     return 0
+  }
+
+  function filterKeyForTab() {
+    if (root.activeTab === "history") return root.historyFilter
+    if (root.activeTab === "settings") return root.settingsFilter
+    return ""
+  }
+
+  function applyFilterKey(key) {
+    if (root.activeTab === "history") {
+      root.historyFilter = key
+      root.rebuild()
+      if (root.focusSection === "rows") root.selectedIndex = 0
+      return
+    }
+    if (root.activeTab === "settings") {
+      root.settingsFilter = key
+      root.rebuildSettings()
+    }
   }
 
   function chipIndexByKey(chips, key) {
@@ -206,7 +238,7 @@ Panel {
         root.selectedIndex = 0
       } else if (root.activeFilterChips.length > 0) {
         root.focusSection = "filters"
-        root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.settingsFilter)
+        root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.filterKeyForTab())
       } else {
         root.focusSection = "tabs"
         root.selectedIndex = root.chipIndexByKey(root.tabs, root.activeTab)
@@ -248,7 +280,7 @@ Panel {
         if (dy > 0) {
           if (root.activeFilterChips.length > 0) {
             root.focusSection = "filters"
-            root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.settingsFilter)
+            root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.filterKeyForTab())
           } else if (root.activeListCount > 0) {
             root.focusSection = "rows"
             root.selectedIndex = 0
@@ -270,7 +302,7 @@ Panel {
       else if (root.selectedIndex > 0) root.selectedIndex = root.selectedIndex - 1
       else if (root.activeFilterChips.length > 0) {
         root.focusSection = "filters"
-        root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.settingsFilter)
+        root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.filterKeyForTab())
       } else {
         root.focusSection = "tabs"
         root.selectedIndex = root.chipIndexByKey(root.tabs, root.activeTab)
@@ -285,8 +317,7 @@ Panel {
     }
     if (root.focusSection === "filters" && root.activeFilterChips.length > 0) {
       root.selectedIndex = root.clampIndex(root.selectedIndex + dx, root.activeFilterChips.length)
-      root.settingsFilter = root.activeFilterChips[root.selectedIndex].key
-      root.rebuildSettings()
+      root.applyFilterKey(root.activeFilterChips[root.selectedIndex].key)
       return
     }
     if (root.focusSection === "rows" && root.activeTab === "settings")
@@ -313,8 +344,8 @@ Panel {
       store.setSetting("clickAction", Model.cycle(["Auto", "Focus the app", "Nothing"], cfg.clickAction, delta))
     else if (row.kind === "enum" && row.key === "badge")
       store.setSetting("badge", Model.cycle(["Dot", "Highlight", "Count", "None"], cfg.badge, delta))
-    else if (row.kind === "enum" && row.key === "defaultSound")
-      store.setSetting("defaultSound", Model.cycle(Model.SOUND_IDS, cfg.defaultSound, delta))
+    else if (row.kind === "enum" && (row.key === "defaultSound" || row.key === "soundLow" || row.key === "soundNormal" || row.key === "soundCritical"))
+      store.setSetting(row.key, Model.cycle(Model.SOUND_IDS, cfg[row.key], delta))
     else if (row.kind === "appSound") {
       var cur = (cfg.appSounds && cfg.appSounds[row.app]) ? cfg.appSounds[row.app] : "inherit"
       store.setAppSound(row.app, Model.cycle(["inherit"].concat(Model.SOUND_IDS), cur, delta))
@@ -328,8 +359,7 @@ Panel {
       return
     }
     if (root.focusSection === "filters") {
-      root.settingsFilter = root.activeFilterChips[root.selectedIndex].key
-      root.rebuildSettings()
+      root.applyFilterKey(root.activeFilterChips[root.selectedIndex].key)
       return
     }
     if (root.activeTab === "history" && selectedIndex >= 0 && selectedIndex < historyRows.count)
@@ -383,6 +413,7 @@ Panel {
     root.focusSection = root.activeFilterChips.length > 0 ? "filters" : "rows"
   }
   onSettingsFilterChanged: rebuildSettings()
+  onHistoryFilterChanged: rebuild()
   onFilterChanged: rebuild()
 
   onOpenedChanged: {
@@ -596,14 +627,30 @@ Panel {
         }
 
         Yanc.ChipRow {
+          visible: root.activeTab === "history"
+          compact: true
+          chips: root.historyChips
+          selectedKey: root.historyFilter
+          foreground: root.contentForeground
+          fontFamily: root.contentFontFamily
+          cursorActive: root.cursorActive && root.focusSection === "filters" && root.activeTab === "history"
+          cursorIndex: root.cursorActive && root.focusSection === "filters" && root.activeTab === "history" ? root.selectedIndex : -1
+          onSelected: function(key) {
+            root.historyFilter = key
+            root.setFiltersCursor(root.chipIndexByKey(root.historyChips, key))
+          }
+          onChipHovered: function(index) { root.setFiltersCursor(index) }
+        }
+
+        Yanc.ChipRow {
           visible: root.activeTab === "settings"
           compact: true
           chips: root.settingsChips
           selectedKey: root.settingsFilter
           foreground: root.contentForeground
           fontFamily: root.contentFontFamily
-          cursorActive: root.cursorActive && root.focusSection === "filters"
-          cursorIndex: root.cursorActive && root.focusSection === "filters" ? root.selectedIndex : -1
+          cursorActive: root.cursorActive && root.focusSection === "filters" && root.activeTab === "settings"
+          cursorIndex: root.cursorActive && root.focusSection === "filters" && root.activeTab === "settings" ? root.selectedIndex : -1
           onSelected: function(key) {
             root.settingsFilter = key
             root.setFiltersCursor(root.chipIndexByKey(root.settingsChips, key))
@@ -659,6 +706,7 @@ Panel {
             required property string glyph
             required property string time
             required property double timestamp
+            required property int urgency
             width: ListView.view.width
             height: historyCard.implicitHeight
             Yanc.NotificationRow {
@@ -672,6 +720,7 @@ Panel {
               preview: historyWrap.preview
               glyph: historyWrap.glyph
               time: historyWrap.time
+              urgency: historyWrap.urgency
               unread: historyWrap.timestamp > root.readMark
               showBody: !!root.cfg.showBody
               showPreview: !!root.cfg.showPreview
@@ -692,7 +741,7 @@ Panel {
           anchors.centerIn: parent
           visible: root.activeTab === "history" && historyRows.count === 0
           text: !root.loaded ? "Reading the archive…"
-            : root.filter !== "" ? "Nothing matches"
+            : (root.filter !== "" || root.historyFilter !== "all") ? "Nothing matches"
             : "Nothing has come in yet"
           color: Qt.darker(root.contentForeground, 1.5)
           font.family: root.contentFontFamily
@@ -718,6 +767,7 @@ Panel {
             required property string preview
             required property string glyph
             required property string time
+            required property int urgency
             width: ListView.view.width
             height: trashCard.implicitHeight
             Yanc.NotificationRow {
@@ -731,6 +781,7 @@ Panel {
               preview: trashWrap.preview
               glyph: trashWrap.glyph
               time: trashWrap.time
+              urgency: trashWrap.urgency
               showBody: !!root.cfg.showBody
               showPreview: !!root.cfg.showPreview
               actionLabel: "Restore"

@@ -14,6 +14,7 @@ CursorSurface {
   property string preview: ""
   property string glyph: ""
   property string time: ""
+  property int urgency: 1
   property bool unread: false
   property bool showBody: true
   property bool showPreview: true
@@ -28,9 +29,15 @@ CursorSurface {
   signal rowClicked()
   signal rowHovered()
 
+  readonly property int urgencyLevel: urgency >= 2 ? 2 : (urgency <= 0 ? 0 : 1)
+  readonly property color urgencyColor: urgencyLevel === 2
+    ? Color.urgent
+    : (urgencyLevel === 0 ? Qt.darker(contentForeground, 1.8) : Color.accent)
+  readonly property string urgencyLabel: urgencyLevel === 2 ? "Critical" : (urgencyLevel === 0 ? "Low" : "")
+
   foreground: contentForeground
   fill: Style.hoverFillFor(contentForeground, Color.accent, Color.urgent)
-  bordered: unread
+  bordered: unread || urgencyLevel === 2
 
   readonly property string previewSource: {
     if (!showPreview) return ""
@@ -46,6 +53,15 @@ CursorSurface {
   }
 
   implicitHeight: Math.max(Style.space(56), contentCol.implicitHeight + Style.space(16))
+
+  Rectangle {
+    anchors.left: parent.left
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    width: Style.space(3)
+    radius: 1
+    color: root.urgencyColor
+  }
 
   MouseArea {
     anchors.fill: parent
@@ -95,7 +111,7 @@ CursorSurface {
         anchors.centerIn: parent
         visible: root.previewSource === "" && root.smallIcon === ""
         text: root.glyph !== "" ? root.glyph : "\uDB80\uDC9A"
-        color: root.contentForeground
+        color: root.urgencyColor
         font.family: root.contentFontFamily
         font.pixelSize: Style.font.icon
       }
@@ -111,7 +127,7 @@ CursorSurface {
         spacing: Style.space(8)
 
         Text {
-          width: parent.width - timeLabel.implicitWidth - Style.space(8)
+          width: parent.width - metaLabel.implicitWidth - Style.space(8)
           elide: Text.ElideRight
           text: root.app !== "" ? root.app : "Notification"
           color: Qt.darker(root.contentForeground, 1.5)
@@ -120,11 +136,12 @@ CursorSurface {
         }
 
         Text {
-          id: timeLabel
-          text: root.time
-          color: Qt.darker(root.contentForeground, 1.5)
+          id: metaLabel
+          text: (root.urgencyLabel !== "" ? root.urgencyLabel + " · " : "") + root.time
+          color: root.urgencyLevel === 2 ? Color.urgent : Qt.darker(root.contentForeground, 1.5)
           font.family: root.contentFontFamily
           font.pixelSize: Style.font.caption
+          font.bold: root.urgencyLevel === 2
         }
       }
 

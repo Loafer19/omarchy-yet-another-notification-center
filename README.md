@@ -45,11 +45,13 @@ Right-click the bell for Do Not Disturb.
 
 ## Tabs
 
-- **History** — newest first, grouped by day. `/` search. Dismiss → trash.
+- **History** — newest first, grouped by day. Chips filter Omarchy's
+  urgency (`-u low|normal|critical`): All / Critical / Normal / Low.
+  Critical cards get a red stripe. `/` search. Dismiss → trash.
   Header: DND, Auto-hide, Clear (everything visible goes to trash).
 - **Trash** — 30 days, then purged. Restore or empty.
 - **Settings** — General (display limit, retention, click, badge) and Sound
-  (master, default clip, mute while DND, per-app overrides as apps appear).
+  (master, a clip per urgency, mute while DND, per-app overrides as apps appear).
 
 **Tab** cycles tabs · **h/l** chips · **j/k** rows · **Enter** acts · **x**
 trashes / purges · **Esc** closes.
