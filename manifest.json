@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "yoyo.notification-center",
+  "name": "Yet Another Notification Center",
+  "version": "1.0.0",
+  "author": "yoyo",
+  "license": "MIT",
+  "description": "Notification history, 30-day trash, sounds, and auto-hide — sitting on Omarchy's existing notification daemon",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Notification Center",
+    "description": "History, trash, sounds, and auto-hide",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "badge": "Dot",
+      "keepDays": 30,
+      "displayLimit": 50,
+      "autoHideMs": 0,
+      "soundEnabled": true
+    },
+    "schema": [
+      {
+        "key": "badge",
+        "type": "enum",
+        "label": "Unread mark",
+        "options": ["Dot", "Highlight", "Count", "None"],
+        "defaultValue": "Dot",
+        "description": "How the bell shows notifications that arrived since you last opened the center."
+      },
+      {
+        "key": "keepDays",
+        "type": "integer",
+        "label": "Keep history for",
+        "min": 1,
+        "max": 365,
+        "step": 1,
+        "defaultValue": 30,
+        "description": "Days. Older history is deleted. Trash is always 30 days."
+      },
+      {
+        "key": "displayLimit",
+        "type": "integer",
+        "label": "Show at most",
+        "min": 10,
+        "max": 500,
+        "step": 10,
+        "defaultValue": 50,
+        "description": "Cards on the History tab. The archive can be larger."
+      },
+      {
+        "key": "autoHideMs",
+        "type": "integer",
+        "label": "Auto-hide toasts after (ms)",
+        "min": 0,
+        "max": 30000,
+        "step": 1000,
+        "defaultValue": 0,
+        "description": "0 leaves Omarchy's own timeouts. Any other value dismisses every on-screen toast, including critical."
+      },
+      {
+        "key": "soundEnabled",
+        "type": "boolean",
+        "label": "Play a sound",
+        "defaultValue": true,
+        "description": "Omarchy's daemon is silent. This plays a freedesktop sound when a notification is archived."
+      }
+    ]
+  }
+}

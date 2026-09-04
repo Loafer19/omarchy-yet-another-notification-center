@@ -1,0 +1,3 @@
+Sounds come from the freedesktop theme via canberra-gtk-play
+(message-new-instant, message-new-email, dialog-warning, complete,
+camera-shutter). Nothing is bundled here.
