@@ -50,8 +50,9 @@ Right-click the bell for Do Not Disturb.
   Critical cards get a red stripe. `/` search. Dismiss → trash.
   Header: DND, Auto-hide, Clear (everything visible goes to trash).
 - **Trash** — 30 days, then purged. Restore or empty.
-- **Settings** — General (display limit, retention, click, badge) and Sound
-  (master, a clip per urgency, mute while DND, per-app overrides as apps appear).
+- **Settings** — General (display limit, retention, click, badge), Sound
+  (master and a clip per urgency), and Apps (per-app overrides as apps appear).
+  Steppers use − / + (right-click also goes down).
 
 **Tab** cycles tabs · **h/l** chips · **j/k** rows · **Enter** acts · **x**
 trashes / purges · **Esc** closes.

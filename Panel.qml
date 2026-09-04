@@ -45,7 +45,8 @@ Panel {
   ]
   readonly property var settingsChips: [
     { key: "general", label: "General" },
-    { key: "sound", label: "Sound" }
+    { key: "sound", label: "Sound" },
+    { key: "apps", label: "Apps" }
   ]
 
   readonly property var cfg: store && store.cfg ? store.cfg : Model.DEFAULTS
@@ -157,6 +158,9 @@ Panel {
       settingRows.append({ key: "soundNormal", kind: "enum", title: "Normal", subtitle: "The usual desktop notification", valueLabel: Model.soundLabel(c.soundNormal || c.defaultSound || "message") })
       settingRows.append({ key: "soundLow", kind: "enum", title: "Low", subtitle: "Omarchy -u low — quiet toasts", valueLabel: Model.soundLabel(c.soundLow || "complete") })
       settingRows.append({ key: "muteSoundWhenDnd", kind: "toggle", title: "Mute while Do Not Disturb", subtitle: "Still archives the notification", valueLabel: boolLabel(!!c.muteSoundWhenDnd) })
+      return
+    }
+    if (settingsFilter === "apps") {
       var apps = store && store.apps ? store.apps : []
       for (var i = 0; i < apps.length; i++) {
         var app = apps[i].app
@@ -165,14 +169,14 @@ Panel {
           key: "app:" + app,
           kind: "appSound",
           title: app,
-          subtitle: (apps[i].count || 1) + " in archive · click to cycle sound",
+          subtitle: (apps[i].count || 1) + " in archive · − / + to pick a sound",
           valueLabel: Model.soundLabel(current),
           app: app
         })
       }
       return
     }
-    settingRows.append({ key: "displayLimit", kind: "step", title: "Show at most", subtitle: "Cards on the History tab", valueLabel: String(c.displayLimit || 50), min: 10, max: 500, step: 10 })
+    settingRows.append({ key: "displayLimit", kind: "step", title: "Show at most", subtitle: "Cards on the History tab · − / +", valueLabel: String(c.displayLimit || 50), min: 10, max: 500, step: 10 })
     settingRows.append({ key: "keepDays", kind: "step", title: "Keep history for", subtitle: "Days. Older entries are deleted", valueLabel: String(c.keepDays || 30) + " days", min: 1, max: 365, step: 1 })
     settingRows.append({ key: "maxItems", kind: "step", title: "Keep at most", subtitle: "Archive ceiling, regardless of age", valueLabel: String(c.maxItems || 1000), min: 50, max: 10000, step: 50 })
     settingRows.append({ key: "clickAction", kind: "enum", title: "Clicking a notification", subtitle: "Never runs the sender's command", valueLabel: String(c.clickAction || "Auto") })
@@ -512,67 +516,28 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(6)
 
-            Rectangle {
-              width: dndLabel.implicitWidth + Style.space(16)
-              height: Style.space(24)
-              radius: Style.cornerRadius
-              color: root.dnd ? Color.accent : Style.normalFillFor(root.contentForeground, Color.accent, Color.urgent)
-              Text {
-                id: dndLabel
-                anchors.centerIn: parent
-                text: root.dnd ? "DND" : "DND off"
-                color: root.dnd ? Color.background : root.contentForeground
-                font.family: root.contentFontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-              }
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.toggleDnd()
-              }
+            Yanc.HeaderChip {
+              text: root.dnd ? "DND" : "DND off"
+              on: root.dnd
+              contentForeground: root.contentForeground
+              contentFontFamily: root.contentFontFamily
+              onClicked: root.toggleDnd()
             }
 
-            Rectangle {
-              width: hideLabel.implicitWidth + Style.space(16)
-              height: Style.space(24)
-              radius: Style.cornerRadius
-              color: root.autoHideOn ? Color.accent : Style.normalFillFor(root.contentForeground, Color.accent, Color.urgent)
-              Text {
-                id: hideLabel
-                anchors.centerIn: parent
-                text: root.autoHideOn ? "Auto-hide" : "Auto-hide off"
-                color: root.autoHideOn ? Color.background : root.contentForeground
-                font.family: root.contentFontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-              }
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.toggleAutoHide()
-              }
+            Yanc.HeaderChip {
+              text: root.autoHideOn ? "Auto-hide" : "Auto-hide off"
+              on: root.autoHideOn
+              contentForeground: root.contentForeground
+              contentFontFamily: root.contentFontFamily
+              onClicked: root.toggleAutoHide()
             }
 
-            Rectangle {
-              width: clearLabel.implicitWidth + Style.space(16)
-              height: Style.space(24)
-              radius: Style.cornerRadius
+            Yanc.HeaderChip {
               visible: historyRows.count > 0
-              color: Style.normalFillFor(root.contentForeground, Color.accent, Color.urgent)
-              Text {
-                id: clearLabel
-                anchors.centerIn: parent
-                text: "Clear"
-                color: root.contentForeground
-                font.family: root.contentFontFamily
-                font.pixelSize: Style.font.caption
-              }
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (store) store.clearAll()
-              }
+              text: "Clear"
+              contentForeground: root.contentForeground
+              contentFontFamily: root.contentFontFamily
+              onClicked: if (store) store.clearAll()
             }
           }
         }
@@ -601,28 +566,16 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          Rectangle {
+          Yanc.HeaderChip {
             anchors.right: parent.right
             anchors.rightMargin: root.edgeMargin
             anchors.verticalCenter: parent.verticalCenter
             visible: trashRows.count > 0
-            width: emptyLabel.implicitWidth + Style.space(16)
-            height: Style.space(24)
-            radius: Style.cornerRadius
-            color: Style.normalFillFor(root.contentForeground, Color.accent, Color.urgent)
-            Text {
-              id: emptyLabel
-              anchors.centerIn: parent
-              text: "Empty trash"
-              color: root.contentForeground
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.caption
-            }
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: if (store) store.emptyTrash()
-            }
+            text: "Empty trash"
+            danger: true
+            contentForeground: root.contentForeground
+            contentFontFamily: root.contentFontFamily
+            onClicked: if (store) store.emptyTrash()
           }
         }
 
@@ -819,6 +772,7 @@ Panel {
             required property string title
             required property string subtitle
             required property string valueLabel
+            required property string kind
             width: ListView.view.width
             height: settingCard.height
             Yanc.SettingRow {
@@ -827,6 +781,7 @@ Panel {
               title: settingWrap.title
               subtitle: settingWrap.subtitle
               valueLabel: settingWrap.valueLabel
+              kind: settingWrap.kind
               contentForeground: root.contentForeground
               contentFontFamily: root.contentFontFamily
               edgeMargin: root.edgeMargin
@@ -836,8 +791,25 @@ Panel {
                 root.setRowCursor(settingWrap.index)
                 root.nudgeSetting(1)
               }
+              onDecrementClicked: {
+                root.setRowCursor(settingWrap.index)
+                root.nudgeSetting(-1)
+              }
+              onIncrementClicked: {
+                root.setRowCursor(settingWrap.index)
+                root.nudgeSetting(1)
+              }
             }
           }
+        }
+
+        Text {
+          anchors.centerIn: parent
+          visible: root.activeTab === "settings" && root.settingsFilter === "apps" && settingRows.count === 0
+          text: "No apps in the archive yet"
+          color: Qt.darker(root.contentForeground, 1.5)
+          font.family: root.contentFontFamily
+          font.pixelSize: Style.font.body
         }
       }
     }
