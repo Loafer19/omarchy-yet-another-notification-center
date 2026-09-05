@@ -110,6 +110,7 @@ CursorSurface {
       Text {
         anchors.centerIn: parent
         visible: root.previewSource === "" && root.smallIcon === ""
+        textFormat: Text.PlainText
         text: root.glyph !== "" ? root.glyph : "\uDB80\uDC9A"
         color: root.urgencyColor
         font.family: root.contentFontFamily
@@ -129,6 +130,7 @@ CursorSurface {
         Text {
           width: parent.width - metaLabel.implicitWidth - Style.space(8)
           elide: Text.ElideRight
+          textFormat: Text.PlainText
           text: root.app !== "" ? root.app : "Notification"
           color: Qt.darker(root.contentForeground, 1.5)
           font.family: root.contentFontFamily
@@ -137,6 +139,7 @@ CursorSurface {
 
         Text {
           id: metaLabel
+          textFormat: Text.PlainText
           text: (root.urgencyLabel !== "" ? root.urgencyLabel + " · " : "") + root.time
           color: root.urgencyLevel === 2 ? Color.urgent : Qt.darker(root.contentForeground, 1.5)
           font.family: root.contentFontFamily
@@ -151,6 +154,7 @@ CursorSurface {
         wrapMode: Text.WordWrap
         maximumLineCount: 2
         elide: Text.ElideRight
+        textFormat: Text.PlainText
         text: root.summary
         color: root.contentForeground
         font.family: root.contentFontFamily

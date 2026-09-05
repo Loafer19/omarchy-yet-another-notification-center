@@ -60,6 +60,7 @@ CursorSurface {
       width: parent.width
       elide: Text.ElideRight
       visible: root.title !== ""
+      textFormat: Text.PlainText
       text: root.title
       color: root.contentForeground
       font.family: root.contentFontFamily
@@ -70,6 +71,7 @@ CursorSurface {
       width: parent.width
       elide: Text.ElideRight
       visible: root.subtitle !== ""
+      textFormat: Text.PlainText
       text: root.subtitle
       color: Qt.darker(root.contentForeground, 1.5)
       font.family: root.contentFontFamily
