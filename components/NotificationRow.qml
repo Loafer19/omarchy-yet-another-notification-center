@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "../Model.js" as Model
 
 CursorSurface {
   id: root
@@ -41,15 +42,15 @@ CursorSurface {
 
   readonly property string previewSource: {
     if (!showPreview) return ""
-    if (preview) return preview.indexOf("file://") === 0 ? preview : (preview.charAt(0) === "/" ? "file://" + preview : "")
-    if (image && image.indexOf("file://") === 0) return image
-    return ""
+    var stored = Model.storeImageUrl(preview) || Model.storeImageUrl(image)
+    return stored
   }
   readonly property string smallIcon: {
-    if (!appIcon) return ""
-    if (appIcon.indexOf("file://") === 0 || appIcon.indexOf("image://") === 0) return appIcon
-    if (appIcon.charAt(0) === "/") return "file://" + appIcon
-    return Quickshell.iconPath(appIcon, true)
+    var stored = Model.storeImageUrl(appIcon)
+    if (stored) return stored
+    var name = Model.themedIconName(appIcon)
+    if (!name) return ""
+    return Quickshell.iconPath(name, true)
   }
 
   implicitHeight: Math.max(Style.space(56), contentCol.implicitHeight + Style.space(16))
@@ -93,6 +94,8 @@ CursorSurface {
         anchors.fill: parent
         visible: root.previewSource !== ""
         source: root.previewSource
+        sourceSize.width: width
+        sourceSize.height: height
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         smooth: true
@@ -102,6 +105,8 @@ CursorSurface {
         anchors.fill: parent
         visible: root.previewSource === "" && root.smallIcon !== ""
         source: root.smallIcon
+        sourceSize.width: width
+        sourceSize.height: height
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         smooth: true

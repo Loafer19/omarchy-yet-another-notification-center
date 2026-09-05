@@ -55,7 +55,7 @@ Item {
 
   function load() {
     if (!listProc.running) {
-      listProc.command = root.storeCommand(["list", String(root.cfg.displayLimit || 50)])
+      listProc.command = root.storeCommand(["list", String(Model.clampInt(root.cfg.displayLimit, 10, 500, 50))])
       listProc.running = true
     }
     if (!trashProc.running) {
@@ -87,6 +87,7 @@ Item {
   }
 
   function setSetting(key, value) {
+    if (Model.DEFAULTS[key] === undefined) return
     var patch = {}
     patch[key] = value
     var next = {}
@@ -100,6 +101,7 @@ Item {
   }
 
   function setAppSound(app, sound) {
+    if (!Model.isSafeAppName(app)) return
     var sounds = {}
     var current = root.cfg.appSounds || {}
     for (var k in current) sounds[k] = current[k]
@@ -109,7 +111,7 @@ Item {
   }
 
   function dismiss(key) {
-    if (!key) return
+    if (!Model.isSafeKey(key)) return
     var next = []
     for (var i = 0; i < entries.length; i++)
       if (entries[i].key !== key) next.push(entries[i])
@@ -120,13 +122,13 @@ Item {
   }
 
   function restore(key) {
-    if (!key) return
+    if (!Model.isSafeKey(key)) return
     Quickshell.execDetached(root.storeCommand(["restore", String(key)]))
     reloadSoon.restart()
   }
 
   function purge(key) {
-    if (!key) return
+    if (!Model.isSafeKey(key)) return
     Quickshell.execDetached(root.storeCommand(["purge", String(key)]))
     reloadSoon.restart()
   }
@@ -145,14 +147,15 @@ Item {
   }
 
   function playSound(id) {
-    if (!id || id === "mute" || id === "inherit") return
-    Quickshell.execDetached(root.storeCommand(["play-sound", String(id)]))
+    var sound = Model.canonicalSound(id)
+    if (!sound || sound === "mute" || sound === "inherit") return
+    Quickshell.execDetached(root.storeCommand(["play-sound", sound]))
   }
 
   function absorb(line) {
     var entry
     try { entry = JSON.parse(line) } catch (e) { return }
-    if (!entry || !entry.key) return
+    if (!entry || !Model.isSafeKey(entry.key)) return
     for (var i = 0; i < entries.length; i++)
       if (entries[i].key === entry.key) return
     var next = [entry].concat(entries)
@@ -178,9 +181,11 @@ Item {
       n.clearPopups()
       return
     }
-    if (n.popupModel) {
-      while (n.popupModel.count > 0 && typeof n.dismissPopup === "function")
-        n.dismissPopup(0)
+    if (!n.popupModel || typeof n.dismissPopup !== "function") return
+    var guard = 0
+    while (n.popupModel.count > 0 && guard < 32) {
+      n.dismissPopup(0)
+      guard++
     }
   }
 
@@ -214,7 +219,7 @@ Item {
 
   Timer {
     id: restartWatch
-    interval: 30000
+    interval: 5000
     onTriggered: if (!watchProc.running) watchProc.running = true
   }
 

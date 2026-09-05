@@ -409,12 +409,14 @@ Panel {
     if (!row) return
     var action = String(cfg.clickAction || "Auto")
     if (action === "Nothing") return
-    if (action === "Auto" && Model.isImagePath(row.file)) {
-      Quickshell.execDetached(["xdg-open", String(row.file)])
+    if (action === "Auto" && Model.isStoreImage(row.preview || row.file)) {
+      var openPath = Model.storeImageUrl(row.preview || row.file).replace(/^file:\/\//, "")
+      if (openPath && openPath.charAt(0) === "/" && openPath.indexOf("..") < 0)
+        Quickshell.execDetached(["xdg-open", openPath])
       root.close()
       return
     }
-    if (!Model.isSafeAppName(row.app)) return
+    if (!root.omarchyPath || !Model.isSafeAppName(row.app)) return
     focusProc.command = [root.omarchyPath + "/bin/omarchy-hyprland-focus-app", row.app]
     focusProc.running = true
     root.close()

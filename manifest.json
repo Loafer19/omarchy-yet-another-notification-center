@@ -2,10 +2,11 @@
   "schemaVersion": 1,
   "id": "yoyo.notification-center",
   "name": "Yet Another Notification Center",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "author": "yoyo",
   "license": "MIT",
   "description": "Notification history, 30-day trash, sounds, and auto-hide — sitting on Omarchy's existing notification daemon",
+  "keepLoaded": true,
   "kinds": [
     "service",
     "bar-widget"

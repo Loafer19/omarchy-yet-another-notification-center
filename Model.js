@@ -65,10 +65,29 @@ function mergeSettings(raw) {
     if (raw[key] === undefined || raw[key] === null) continue
     if (key === "appSounds" && typeof raw[key] === "object") {
       var sounds = {}
-      for (var app in raw[key]) sounds[app] = canonicalSound(raw[key][app])
+      for (var app in raw[key]) {
+        if (!isSafeAppName(app)) continue
+        sounds[app] = canonicalSound(raw[key][app])
+      }
       out.appSounds = sounds
     } else if (key === "soundLow" || key === "soundNormal" || key === "soundCritical" || key === "defaultSound") {
       out[key] = canonicalSound(raw[key])
+    } else if (key === "displayLimit") {
+      out[key] = clampInt(raw[key], 10, 500, 50)
+    } else if (key === "keepDays" || key === "trashDays") {
+      out[key] = clampInt(raw[key], 1, 365, 30)
+    } else if (key === "maxItems") {
+      out[key] = clampInt(raw[key], 50, 10000, 1000)
+    } else if (key === "autoHideMs") {
+      out[key] = clampInt(raw[key], 0, 30000, 0)
+    } else if (key === "badge") {
+      var badge = String(raw[key])
+      out[key] = (badge === "Dot" || badge === "Highlight" || badge === "Count" || badge === "None") ? badge : "Dot"
+    } else if (key === "clickAction") {
+      var click = String(raw[key])
+      out[key] = (click === "Auto" || click === "Focus the app" || click === "Nothing") ? click : "Auto"
+    } else if (key === "soundEnabled" || key === "muteSoundWhenDnd" || key === "showBody" || key === "showPreview") {
+      out[key] = raw[key] === true
     } else {
       out[key] = raw[key]
     }
@@ -140,22 +159,39 @@ function matches(entry, needle) {
       || String(entry.body || "").toLowerCase().indexOf(n) >= 0
 }
 
-function iconSource(icon) {
-  var value = String(icon || "")
-  if (!value) return ""
-  if (value.indexOf("file://") === 0 || value.indexOf("image://") === 0) return value
-  if (value.charAt(0) === "/") return "file://" + value
-  return ""
+function storeImageUrl(value) {
+  var s = String(value || "")
+  if (!s) return ""
+  if (s.indexOf("image:") === 0 || s.indexOf("http:") === 0 || s.indexOf("https:") === 0 || s.indexOf("qrc:") === 0)
+    return ""
+  if (s.indexOf("file://") === 0) s = s.slice(7)
+  if (s.charAt(0) !== "/") return ""
+  if (s.indexOf("..") >= 0 || s.indexOf("\\") >= 0 || s.indexOf("\0") >= 0) return ""
+  var marker = "/omarchy/yoyo.notification-center/images/"
+  var at = s.indexOf(marker)
+  if (at < 0) return ""
+  var rest = s.slice(at + marker.length)
+  if (!rest || rest.indexOf("/") >= 0) return ""
+  return "file://" + s
+}
+
+function themedIconName(value) {
+  var s = String(value || "")
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(s)) return ""
+  if (s.indexOf("..") >= 0) return ""
+  return s
 }
 
 function isSafeAppName(name) {
   return /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/.test(String(name || ""))
 }
 
-function isImagePath(path) {
-  var s = String(path || "")
-  if (s.indexOf("file://") === 0) s = s.slice(7)
-  return /^\/[^'"\r\n]*\.(jpe?g|png|webp|gif)$/i.test(s)
+function isSafeKey(key) {
+  return /^[A-Za-z0-9._+-]{1,128}$/.test(String(key || ""))
+}
+
+function isStoreImage(path) {
+  return storeImageUrl(path) !== ""
 }
 
 function cycle(list, current, delta) {
@@ -212,7 +248,7 @@ function soundFor(entry, settings) {
   if (!cfg.soundEnabled) return "mute"
   var app = String((entry && entry.app) || "")
   var override = cfg.appSounds && app ? cfg.appSounds[app] : ""
-  if (override) return String(override)
+  if (override) return canonicalSound(override)
   var n = urgencyLevel(entry && entry.urgency)
   if (n === 2) return canonicalSound(cfg.soundCritical || "dialog-warning")
   if (n === 0) return canonicalSound(cfg.soundLow || "complete")
