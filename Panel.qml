@@ -53,8 +53,9 @@ Panel {
 
   readonly property var cfg: store && store.cfg ? store.cfg : Model.DEFAULTS
   readonly property string badge: String(setting("badge", cfg.badge || "Dot"))
-  readonly property var entries: store ? store.entries : []
-  readonly property var trashEntries: store ? store.trashEntries : []
+  readonly property var emptyList: []
+  readonly property var entries: store ? store.entries : emptyList
+  readonly property var trashEntries: store ? store.trashEntries : emptyList
   readonly property int unread: store ? store.unread : 0
   readonly property double lastSeen: store ? store.lastSeen : 0
   readonly property bool loaded: store ? store.loaded : false
@@ -91,9 +92,6 @@ Panel {
     var s = host.serviceFor("yoyo.notification-center")
     if (!s) return
     store = s
-    rebuild()
-    rebuildTrash()
-    rebuildSettings()
   }
 
   function pushSchemaSettings() {
@@ -122,88 +120,12 @@ Panel {
     target: root.store
     function onEntryAdded(entry) {
       if (root.opened && store) store.markSeen()
-      rebuild()
-    }
-    function onEntriesReset() { root.rebuild() }
-    function onTrashReset() { root.rebuildTrash() }
-    function onSettingsChanged() { root.rebuildSettings() }
-  }
-
-  ListModel { id: historyRows }
-  ListModel { id: trashRows }
-  ListModel { id: settingRows }
-
-  function rebuild() {
-    historyRows.clear()
-    var list = entries || []
-    for (var i = 0; i < list.length; i++) {
-      if (Model.matches(list[i], filter) && Model.matchesUrgency(list[i], root.historyFilter))
-        historyRows.append(Model.rowFor(list[i], now))
     }
   }
 
-  function rebuildTrash() {
-    trashRows.clear()
-    var list = trashEntries || []
-    for (var i = 0; i < list.length; i++)
-      trashRows.append(Model.rowFor(list[i], now))
-  }
-
-  function boolLabel(v) { return v ? "On" : "Off" }
-
-  function rebuildSettings() {
-    settingRows.clear()
-    var c = cfg
-    function addRow(row) {
-      settingRows.append({
-        key: row.key,
-        kind: row.kind,
-        title: row.title,
-        subtitle: row.subtitle || "",
-        app: row.app || "",
-        optionSet: row.optionSet || "",
-        currentValue: row.currentValue || "",
-        checked: row.checked === true,
-        numericValue: row.numericValue || 0,
-        min: row.min || 0,
-        max: row.max || 0,
-        step: row.step || 1
-      })
-    }
-    if (settingsFilter === "sound") {
-      addRow({ key: "soundEnabled", kind: "toggle", title: "Play a sound", subtitle: "Omarchy's daemon is silent — this plays one when a notification arrives", checked: !!c.soundEnabled })
-      addRow({ key: "soundCritical", kind: "enum", title: "Critical", subtitle: "Omarchy -u critical", optionSet: "sound", currentValue: Model.canonicalSound(c.soundCritical || "dialog-warning") })
-      addRow({ key: "soundNormal", kind: "enum", title: "Normal", subtitle: "The usual desktop notification", optionSet: "sound", currentValue: Model.canonicalSound(c.soundNormal || c.defaultSound || "message-new-instant") })
-      addRow({ key: "soundLow", kind: "enum", title: "Low", subtitle: "Omarchy -u low", optionSet: "sound", currentValue: Model.canonicalSound(c.soundLow || "complete") })
-      addRow({ key: "muteSoundWhenDnd", kind: "toggle", title: "Mute while Do Not Disturb", subtitle: "No sound while DND is on. History still records them.", checked: !!c.muteSoundWhenDnd })
-      return
-    }
-    if (settingsFilter === "apps") {
-      var apps = store && store.apps ? store.apps : []
-      for (var i = 0; i < apps.length; i++) {
-        var app = apps[i].app
-        var current = (c.appSounds && c.appSounds[app]) ? c.appSounds[app] : "inherit"
-        addRow({
-          key: "app:" + app,
-          kind: "appSound",
-          title: app,
-          subtitle: (apps[i].count || 1) + " in archive",
-          app: app,
-          optionSet: "appSound",
-          currentValue: current
-        })
-      }
-      return
-    }
-    addRow({ key: "displayLimit", kind: "step", title: "Show at most", subtitle: "Cards on the History tab", numericValue: Number(c.displayLimit || 50), min: 10, max: 500, step: 10 })
-    addRow({ key: "keepDays", kind: "step", title: "Keep history for", subtitle: "Days. Older entries are deleted", numericValue: Number(c.keepDays || 30), min: 1, max: 365, step: 1 })
-    addRow({ key: "trashDays", kind: "step", title: "Keep trash for", subtitle: "Days. Then purged for good", numericValue: Number(c.trashDays || 30), min: 1, max: 365, step: 1 })
-    addRow({ key: "maxItems", kind: "step", title: "Keep at most", subtitle: "Archive ceiling, regardless of age", numericValue: Number(c.maxItems || 1000), min: 50, max: 10000, step: 50 })
-    addRow({ key: "clickAction", kind: "enum", title: "Clicking a notification", subtitle: "Never runs the sender's command", optionSet: "clickAction", currentValue: String(c.clickAction || "Auto") })
-    addRow({ key: "showBody", kind: "toggle", title: "Show the message text", subtitle: "Off leaves the sender and subject", checked: !!c.showBody })
-    addRow({ key: "showPreview", kind: "toggle", title: "Show pictures", subtitle: "Off stops keeping copies of new ones", checked: !!c.showPreview })
-    addRow({ key: "badge", kind: "enum", title: "Unread mark", subtitle: "On the bar bell", optionSet: "badge", currentValue: String(c.badge || "Dot") })
-  }
+  readonly property var historyView: Model.visibleEntries(entries, filter, historyFilter)
+  readonly property var trashView: Model.rowsFor(trashEntries)
+  readonly property var settingsView: Model.settingRows(cfg, settingsFilter, store && store.apps ? store.apps : [])
 
   property bool cursorActive: false
   property string focusSection: "rows"
@@ -215,28 +137,28 @@ Panel {
     return []
   }
   readonly property int activeListCount: {
-    if (root.activeTab === "history") return historyRows.count
-    if (root.activeTab === "trash") return trashRows.count
-    if (root.activeTab === "settings") return settingRows.count
+    if (root.activeTab === "history") return historyView.length
+    if (root.activeTab === "trash") return trashView.length
+    if (root.activeTab === "settings") return settingsView.length
     return 0
   }
 
-  function filterKeyForTab() {
+  readonly property string activeFilterKey: {
     if (root.activeTab === "history") return root.historyFilter
     if (root.activeTab === "settings") return root.settingsFilter
     return ""
   }
 
+  function filterKeyForTab() { return root.activeFilterKey }
+
   function applyFilterKey(key) {
     if (root.activeTab === "history") {
       root.historyFilter = key
-      root.rebuild()
       if (root.focusSection === "rows") root.selectedIndex = 0
       return
     }
     if (root.activeTab === "settings") {
       root.settingsFilter = key
-      root.rebuildSettings()
     }
   }
 
@@ -349,8 +271,8 @@ Panel {
   }
 
   function nudgeSetting(delta) {
-    if (selectedIndex < 0 || selectedIndex >= settingRows.count) return
-    var row = settingRows.get(selectedIndex)
+    if (selectedIndex < 0 || selectedIndex >= settingsView.length) return
+    var row = settingsView[selectedIndex]
     if (!row || !store) return
     if (row.kind === "toggle") {
       store.setSetting(row.key, !(cfg[row.key]))
@@ -364,10 +286,8 @@ Panel {
       store.setSetting(row.key, next)
       return
     }
-    if (row.kind === "enum" && row.key === "clickAction")
-      store.setSetting("clickAction", Model.cycle(["Auto", "Focus the app", "Nothing"], cfg.clickAction, delta))
-    else if (row.kind === "enum" && row.key === "badge")
-      store.setSetting("badge", Model.cycle(["Dot", "Highlight", "Count", "None"], cfg.badge, delta))
+    if (row.kind === "enum" && Model.enumList(row.key).length)
+      store.setSetting(row.key, Model.cycle(Model.enumList(row.key), cfg[row.key], delta))
     else if (row.kind === "enum" && (row.key === "defaultSound" || row.key === "soundLow" || row.key === "soundNormal" || row.key === "soundCritical")) {
       var soundNext = Model.cycle(Model.SOUND_IDS, cfg[row.key], delta)
       store.setSetting(row.key, soundNext)
@@ -388,19 +308,19 @@ Panel {
       root.applyFilterKey(root.activeFilterChips[root.selectedIndex].key)
       return
     }
-    if (root.activeTab === "history" && selectedIndex >= 0 && selectedIndex < historyRows.count)
-      root.activate(historyRows.get(selectedIndex))
-    else if (root.activeTab === "trash" && selectedIndex >= 0 && selectedIndex < trashRows.count)
-      root.restoreRow(trashRows.get(selectedIndex))
+    if (root.activeTab === "history" && selectedIndex >= 0 && selectedIndex < historyView.length)
+      root.activate(historyView[selectedIndex])
+    else if (root.activeTab === "trash" && selectedIndex >= 0 && selectedIndex < trashView.length)
+      root.restoreRow(trashView[selectedIndex])
     else if (root.activeTab === "settings")
       root.nudgeSetting(1)
   }
 
   function deleteSelected() {
-    if (root.activeTab === "history" && selectedIndex >= 0 && selectedIndex < historyRows.count)
-      root.dismissRow(historyRows.get(selectedIndex))
-    else if (root.activeTab === "trash" && selectedIndex >= 0 && selectedIndex < trashRows.count)
-      root.purgeRow(trashRows.get(selectedIndex))
+    if (root.activeTab === "history" && selectedIndex >= 0 && selectedIndex < historyView.length)
+      root.dismissRow(historyView[selectedIndex])
+    else if (root.activeTab === "trash" && selectedIndex >= 0 && selectedIndex < trashView.length)
+      root.purgeRow(trashView[selectedIndex])
   }
 
   Process { id: focusProc }
@@ -440,9 +360,6 @@ Panel {
     root.selectedIndex = 0
     root.focusSection = root.activeFilterChips.length > 0 ? "filters" : "rows"
   }
-  onSettingsFilterChanged: rebuildSettings()
-  onHistoryFilterChanged: rebuild()
-  onFilterChanged: rebuild()
 
   onOpenedChanged: {
     if (!opened) {
@@ -526,7 +443,7 @@ Panel {
             spacing: Style.space(8)
 
             Text {
-              text: root.filter !== "" ? historyRows.count + " matching" : (historyRows.count + " kept")
+              text: root.filter !== "" ? historyView.length + " matching" : (historyView.length + " kept")
               color: Qt.darker(root.contentForeground, 1.5)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
@@ -561,7 +478,7 @@ Panel {
             }
 
             Yanc.HeaderChip {
-              visible: historyRows.count > 0
+              visible: historyView.length > 0
               text: "Clear"
               contentForeground: root.contentForeground
               contentFontFamily: root.contentFontFamily
@@ -592,7 +509,7 @@ Panel {
             text: {
               var days = Number(root.cfg.trashDays || 30)
               var kept = days === 1 ? "1 day" : days + " days"
-              return trashRows.count === 0 ? "Empty · kept " + kept : trashRows.count + " in trash · " + kept
+              return trashView.length === 0 ? "Empty · kept " + kept : trashView.length + " in trash · " + kept
             }
             color: Qt.darker(root.contentForeground, 1.5)
             font.family: root.contentFontFamily
@@ -603,7 +520,7 @@ Panel {
             anchors.right: parent.right
             anchors.rightMargin: root.edgeMargin
             anchors.verticalCenter: parent.verticalCenter
-            visible: trashRows.count > 0
+            visible: trashView.length > 0
             text: "Empty trash"
             contentForeground: root.contentForeground
             contentFontFamily: root.contentFontFamily
@@ -613,33 +530,17 @@ Panel {
         }
 
         Yanc.ChipRow {
-          visible: root.activeTab === "history"
+          visible: root.activeFilterChips.length > 0
           compact: true
-          chips: root.historyChips
-          selectedKey: root.historyFilter
+          chips: root.activeFilterChips
+          selectedKey: root.activeFilterKey
           foreground: root.contentForeground
           fontFamily: root.contentFontFamily
-          cursorActive: root.cursorActive && root.focusSection === "filters" && root.activeTab === "history"
-          cursorIndex: root.cursorActive && root.focusSection === "filters" && root.activeTab === "history" ? root.selectedIndex : -1
+          cursorActive: root.cursorActive && root.focusSection === "filters"
+          cursorIndex: root.cursorActive && root.focusSection === "filters" ? root.selectedIndex : -1
           onSelected: function(key) {
-            root.historyFilter = key
-            root.setFiltersCursor(root.chipIndexByKey(root.historyChips, key))
-          }
-          onChipHovered: function(index) { root.setFiltersCursor(index) }
-        }
-
-        Yanc.ChipRow {
-          visible: root.activeTab === "settings"
-          compact: true
-          chips: root.settingsChips
-          selectedKey: root.settingsFilter
-          foreground: root.contentForeground
-          fontFamily: root.contentFontFamily
-          cursorActive: root.cursorActive && root.focusSection === "filters" && root.activeTab === "settings"
-          cursorIndex: root.cursorActive && root.focusSection === "filters" && root.activeTab === "settings" ? root.selectedIndex : -1
-          onSelected: function(key) {
-            root.settingsFilter = key
-            root.setFiltersCursor(root.chipIndexByKey(root.settingsChips, key))
+            root.applyFilterKey(key)
+            root.setFiltersCursor(root.chipIndexByKey(root.activeFilterChips, key))
           }
           onChipHovered: function(index) { root.setFiltersCursor(index) }
         }
@@ -659,37 +560,26 @@ Panel {
           visible: root.activeTab === "history"
           clip: true
           spacing: Style.space(6)
-          model: historyRows
+          model: historyView
           delegate: Item {
             id: historyWrap
             required property int index
-            required property string key
-            required property string app
-            required property string appIcon
-            required property string summary
-            required property string body
-            required property string image
-            required property string preview
-            required property string file
-            required property string glyph
-            required property string time
-            required property double timestamp
-            required property int urgency
+            required property var modelData
             width: ListView.view.width
             height: historyCard.implicitHeight
             Yanc.NotificationRow {
               id: historyCard
               width: parent.width
-              app: historyWrap.app
-              appIcon: historyWrap.appIcon
-              summary: historyWrap.summary
-              body: historyWrap.body
-              image: historyWrap.image
-              preview: historyWrap.preview
-              glyph: historyWrap.glyph
-              time: historyWrap.time
-              urgency: historyWrap.urgency
-              unread: historyWrap.timestamp > root.readMark
+              app: historyWrap.modelData.app
+              appIcon: historyWrap.modelData.appIcon
+              summary: historyWrap.modelData.summary
+              body: historyWrap.modelData.body
+              image: historyWrap.modelData.image
+              preview: historyWrap.modelData.preview
+              glyph: historyWrap.modelData.glyph
+              time: Model.formatTime(historyWrap.modelData.timestamp, root.now)
+              urgency: historyWrap.modelData.urgency
+              unread: historyWrap.modelData.timestamp > root.readMark
               showBody: !!root.cfg.showBody
               showPreview: !!root.cfg.showPreview
               actionLabel: "Trash"
@@ -699,15 +589,15 @@ Panel {
               edgeMargin: root.edgeMargin
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "history" && root.selectedIndex === historyWrap.index
               onRowHovered: root.setRowCursor(historyWrap.index)
-              onRowClicked: root.activate({ key: historyWrap.key, app: historyWrap.app, file: historyWrap.file })
-              onActionClicked: root.dismissRow({ key: historyWrap.key })
+              onRowClicked: root.activate(historyWrap.modelData)
+              onActionClicked: root.dismissRow(historyWrap.modelData)
             }
           }
         }
 
         Text {
           anchors.centerIn: parent
-          visible: root.activeTab === "history" && historyRows.count === 0
+          visible: root.activeTab === "history" && historyView.length === 0
           text: !root.loaded ? "Reading the archive…"
             : (root.filter !== "" || root.historyFilter !== "all") ? "Nothing matches"
             : "Nothing has come in yet"
@@ -722,34 +612,25 @@ Panel {
           visible: root.activeTab === "trash"
           clip: true
           spacing: Style.space(6)
-          model: trashRows
+          model: trashView
           delegate: Item {
             id: trashWrap
             required property int index
-            required property string key
-            required property string app
-            required property string appIcon
-            required property string summary
-            required property string body
-            required property string image
-            required property string preview
-            required property string glyph
-            required property string time
-            required property int urgency
+            required property var modelData
             width: ListView.view.width
             height: trashCard.implicitHeight
             Yanc.NotificationRow {
               id: trashCard
               width: parent.width
-              app: trashWrap.app
-              appIcon: trashWrap.appIcon
-              summary: trashWrap.summary
-              body: trashWrap.body
-              image: trashWrap.image
-              preview: trashWrap.preview
-              glyph: trashWrap.glyph
-              time: trashWrap.time
-              urgency: trashWrap.urgency
+              app: trashWrap.modelData.app
+              appIcon: trashWrap.modelData.appIcon
+              summary: trashWrap.modelData.summary
+              body: trashWrap.modelData.body
+              image: trashWrap.modelData.image
+              preview: trashWrap.modelData.preview
+              glyph: trashWrap.modelData.glyph
+              time: Model.formatTime(trashWrap.modelData.timestamp, root.now)
+              urgency: trashWrap.modelData.urgency
               showBody: !!root.cfg.showBody
               showPreview: !!root.cfg.showPreview
               actionLabel: "Restore"
@@ -759,15 +640,15 @@ Panel {
               edgeMargin: root.edgeMargin
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "trash" && root.selectedIndex === trashWrap.index
               onRowHovered: root.setRowCursor(trashWrap.index)
-              onRowClicked: root.restoreRow({ key: trashWrap.key })
-              onActionClicked: root.restoreRow({ key: trashWrap.key })
+              onRowClicked: root.restoreRow(trashWrap.modelData)
+              onActionClicked: root.restoreRow(trashWrap.modelData)
             }
           }
         }
 
         Text {
           anchors.centerIn: parent
-          visible: root.activeTab === "trash" && trashRows.count === 0
+          visible: root.activeTab === "trash" && trashView.length === 0
           text: "Trash is empty"
           color: Qt.darker(root.contentForeground, 1.5)
           font.family: root.contentFontFamily
@@ -780,37 +661,26 @@ Panel {
           visible: root.activeTab === "settings"
           clip: true
           spacing: 0
-          model: settingRows
+          model: settingsView
           delegate: Item {
             id: settingWrap
             required property int index
-            required property string key
-            required property string title
-            required property string subtitle
-            required property string kind
-            required property string app
-            required property string optionSet
-            required property string currentValue
-            required property bool checked
-            required property int numericValue
-            required property int min
-            required property int max
-            required property int step
+            required property var modelData
             width: ListView.view.width
             height: settingCard.height
             Yanc.SettingRow {
               id: settingCard
               width: parent.width
-              title: settingWrap.title
-              subtitle: settingWrap.subtitle
-              kind: settingWrap.kind
-              checked: settingWrap.checked
-              currentValue: settingWrap.currentValue
-              optionSet: settingWrap.optionSet
-              numericValue: settingWrap.numericValue
-              numericMin: settingWrap.min
-              numericMax: settingWrap.max
-              numericStep: settingWrap.step
+              title: settingWrap.modelData.title
+              subtitle: settingWrap.modelData.subtitle
+              kind: settingWrap.modelData.kind
+              checked: settingWrap.modelData.checked
+              currentValue: settingWrap.modelData.currentValue
+              optionSet: settingWrap.modelData.optionSet
+              numericValue: settingWrap.modelData.numericValue
+              numericMin: settingWrap.modelData.min
+              numericMax: settingWrap.modelData.max
+              numericStep: settingWrap.modelData.step
               contentForeground: root.contentForeground
               contentFontFamily: root.contentFontFamily
               edgeMargin: root.edgeMargin
@@ -822,19 +692,19 @@ Panel {
               }
               onValuePicked: function(v) {
                 root.setRowCursor(settingWrap.index)
-                if (settingWrap.optionSet === "sound" || settingWrap.optionSet === "appSound") {
+                if (settingWrap.modelData.optionSet === "sound" || settingWrap.modelData.optionSet === "appSound") {
                   if (root.store) root.store.playSound(v)
                 }
-                if (settingWrap.kind === "appSound") root.store.setAppSound(settingWrap.app, v)
-                else root.store.setSetting(settingWrap.key, v)
+                if (settingWrap.modelData.kind === "appSound") root.store.setAppSound(settingWrap.modelData.app, v)
+                else root.store.setSetting(settingWrap.modelData.key, v)
               }
               onPlayClicked: {
                 root.setRowCursor(settingWrap.index)
-                if (root.store) root.store.playSound(settingWrap.currentValue)
+                if (root.store) root.store.playSound(settingWrap.modelData.currentValue)
               }
               onNumberPicked: function(v) {
                 root.setRowCursor(settingWrap.index)
-                root.store.setSetting(settingWrap.key, v)
+                root.store.setSetting(settingWrap.modelData.key, v)
               }
               onPopupOpenChanged: function(open) { root.settingsPopupOpen = open }
               onFieldFocusChanged: function(on) { root.settingsFieldFocus = on }
@@ -844,7 +714,7 @@ Panel {
 
         Text {
           anchors.centerIn: parent
-          visible: root.activeTab === "settings" && root.settingsFilter === "apps" && settingRows.count === 0
+          visible: root.activeTab === "settings" && root.settingsFilter === "apps" && settingsView.length === 0
           text: "No apps in the archive yet"
           color: Qt.darker(root.contentForeground, 1.5)
           font.family: root.contentFontFamily

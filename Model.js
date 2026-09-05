@@ -1,59 +1,54 @@
 .pragma library
+.import "defaults.js" as Defaults
 
-var DEFAULTS = {
-  displayLimit: 50,
-  keepDays: 30,
-  maxItems: 1000,
-  trashDays: 30,
-  autoHideMs: 0,
-  soundEnabled: true,
-  defaultSound: "message-new-instant",
-  soundLow: "complete",
-  soundNormal: "message-new-instant",
-  soundCritical: "dialog-warning",
-  muteSoundWhenDnd: true,
-  appSounds: {},
-  badge: "Dot",
-  clickAction: "Auto",
-  showBody: true,
-  showPreview: true
-}
-
-var SOUND_IDS = [
-  "mute",
-  "message-new-instant",
-  "dialog-warning",
-  "dialog-error",
-  "complete",
-  "bell",
-  "camera-shutter",
-  "alarm-clock-elapsed",
-  "phone-incoming-call"
-]
-var SOUND_LABELS = {
-  mute: "Mute",
-  "message-new-instant": "Message",
-  "dialog-warning": "Warning",
-  "dialog-error": "Error",
-  complete: "Complete",
-  bell: "Bell",
-  "camera-shutter": "Camera",
-  "alarm-clock-elapsed": "Alarm",
-  "phone-incoming-call": "Call",
-  inherit: "Default"
-}
+var CONFIG = Defaults.CONFIG
+var DEFAULTS = CONFIG.defaults
+var LIMITS = CONFIG.limits
+var ENUMS = CONFIG.enums
+var SOUND_ALIASES = CONFIG.soundAliases
+var SOUND_IDS = (function() {
+  var ids = []
+  var list = CONFIG.sounds || []
+  var i
+  for (i = 0; i < list.length; i++) ids.push(list[i].id)
+  return ids
+})()
+var SOUND_LABELS = (function() {
+  var labels = { inherit: "Default" }
+  var list = CONFIG.sounds || []
+  var i
+  for (i = 0; i < list.length; i++) labels[list[i].id] = list[i].label
+  return labels
+})()
 
 function canonicalSound(id) {
   var s = String(id || "")
-  if (s === "email" || s === "message") return "message-new-instant"
-  if (s === "warning") return "dialog-warning"
-  if (s === "camera") return "camera-shutter"
   if (s === "inherit" || s === "") return s
+  if (SOUND_ALIASES && SOUND_ALIASES[s]) s = SOUND_ALIASES[s]
   var i
   for (i = 0; i < SOUND_IDS.length; i++) {
     if (SOUND_IDS[i] === s) return s
   }
-  return "message-new-instant"
+  return DEFAULTS.defaultSound || "message-new-instant"
+}
+
+function clampNamed(name, value) {
+  var L = LIMITS[name] || {}
+  return clampInt(value, L.min, L.max, L.fallback)
+}
+
+function enumList(name) {
+  return ENUMS[name] || []
+}
+
+function pickEnum(name, value, fallback) {
+  var list = enumList(name)
+  var s = String(value)
+  var i
+  for (i = 0; i < list.length; i++) {
+    if (list[i] === s) return s
+  }
+  return fallback
 }
 
 function mergeSettings(raw) {
@@ -72,20 +67,10 @@ function mergeSettings(raw) {
       out.appSounds = sounds
     } else if (key === "soundLow" || key === "soundNormal" || key === "soundCritical" || key === "defaultSound") {
       out[key] = canonicalSound(raw[key])
-    } else if (key === "displayLimit") {
-      out[key] = clampInt(raw[key], 10, 500, 50)
-    } else if (key === "keepDays" || key === "trashDays") {
-      out[key] = clampInt(raw[key], 1, 365, 30)
-    } else if (key === "maxItems") {
-      out[key] = clampInt(raw[key], 50, 10000, 1000)
-    } else if (key === "autoHideMs") {
-      out[key] = clampInt(raw[key], 0, 30000, 0)
-    } else if (key === "badge") {
-      var badge = String(raw[key])
-      out[key] = (badge === "Dot" || badge === "Highlight" || badge === "Count" || badge === "None") ? badge : "Dot"
-    } else if (key === "clickAction") {
-      var click = String(raw[key])
-      out[key] = (click === "Auto" || click === "Focus the app" || click === "Nothing") ? click : "Auto"
+    } else if (LIMITS[key]) {
+      out[key] = clampNamed(key, raw[key])
+    } else if (ENUMS[key]) {
+      out[key] = pickEnum(key, raw[key], DEFAULTS[key])
     } else if (key === "soundEnabled" || key === "muteSoundWhenDnd" || key === "showBody" || key === "showPreview") {
       out[key] = raw[key] === true
     } else {
@@ -261,23 +246,14 @@ function soundLabel(id) {
 }
 
 function optionsFor(set) {
-  if (set === "clickAction") {
-    return [
-      { value: "Auto", label: "Auto" },
-      { value: "Focus the app", label: "Focus the app" },
-      { value: "Nothing", label: "Nothing" }
-    ]
-  }
-  if (set === "badge") {
-    return [
-      { value: "Dot", label: "Dot" },
-      { value: "Highlight", label: "Highlight" },
-      { value: "Count", label: "Count" },
-      { value: "None", label: "None" }
-    ]
+  var list = enumList(set)
+  var i
+  if (list.length) {
+    var opts = []
+    for (i = 0; i < list.length; i++) opts.push({ value: list[i], label: list[i] })
+    return opts
   }
   var sounds = []
-  var i
   if (set === "appSound") sounds.push({ value: "inherit", label: "Default" })
   if (set === "sound" || set === "appSound") {
     for (i = 0; i < SOUND_IDS.length; i++) {
@@ -286,4 +262,86 @@ function optionsFor(set) {
     return sounds
   }
   return []
+}
+
+function visibleEntries(entries, needle, urgencyFilter) {
+  var out = []
+  var list = entries || []
+  var i
+  for (i = 0; i < list.length; i++) {
+    if (matches(list[i], needle) && matchesUrgency(list[i], urgencyFilter))
+      out.push(rowFor(list[i], 0))
+  }
+  return out
+}
+
+function rowsFor(entries) {
+  var out = []
+  var list = entries || []
+  var i
+  for (i = 0; i < list.length; i++) out.push(rowFor(list[i], 0))
+  return out
+}
+
+function limitOf(name) {
+  return LIMITS[name] || { min: 0, max: 0, step: 1, fallback: 0 }
+}
+
+function settingRows(cfg, filter, apps) {
+  var c = cfg || DEFAULTS
+  var rows = []
+  function add(row) {
+    rows.push({
+      key: row.key,
+      kind: row.kind,
+      title: row.title,
+      subtitle: row.subtitle || "",
+      app: row.app || "",
+      optionSet: row.optionSet || "",
+      currentValue: row.currentValue || "",
+      checked: row.checked === true,
+      numericValue: row.numericValue || 0,
+      min: row.min || 0,
+      max: row.max || 0,
+      step: row.step || 1
+    })
+  }
+  if (filter === "sound") {
+    add({ key: "soundEnabled", kind: "toggle", title: "Play a sound", subtitle: "Omarchy's daemon is silent — this plays one when a notification arrives", checked: !!c.soundEnabled })
+    add({ key: "soundCritical", kind: "enum", title: "Critical", subtitle: "Omarchy -u critical", optionSet: "sound", currentValue: canonicalSound(c.soundCritical || DEFAULTS.soundCritical) })
+    add({ key: "soundNormal", kind: "enum", title: "Normal", subtitle: "The usual desktop notification", optionSet: "sound", currentValue: canonicalSound(c.soundNormal || c.defaultSound || DEFAULTS.soundNormal) })
+    add({ key: "soundLow", kind: "enum", title: "Low", subtitle: "Omarchy -u low", optionSet: "sound", currentValue: canonicalSound(c.soundLow || DEFAULTS.soundLow) })
+    add({ key: "muteSoundWhenDnd", kind: "toggle", title: "Mute while Do Not Disturb", subtitle: "No sound while DND is on. History still records them.", checked: !!c.muteSoundWhenDnd })
+    return rows
+  }
+  if (filter === "apps") {
+    var list = apps || []
+    var i
+    for (i = 0; i < list.length; i++) {
+      var app = list[i].app
+      add({
+        key: "app:" + app,
+        kind: "appSound",
+        title: app,
+        subtitle: (list[i].count || 1) + " in archive",
+        app: app,
+        optionSet: "appSound",
+        currentValue: (c.appSounds && c.appSounds[app]) ? c.appSounds[app] : "inherit"
+      })
+    }
+    return rows
+  }
+  var display = limitOf("displayLimit")
+  var keep = limitOf("keepDays")
+  var trash = limitOf("trashDays")
+  var maxItems = limitOf("maxItems")
+  add({ key: "displayLimit", kind: "step", title: "Show at most", subtitle: "Cards on the History tab", numericValue: clampNamed("displayLimit", c.displayLimit), min: display.min, max: display.max, step: display.step })
+  add({ key: "keepDays", kind: "step", title: "Keep history for", subtitle: "Days. Older entries are deleted", numericValue: clampNamed("keepDays", c.keepDays), min: keep.min, max: keep.max, step: keep.step })
+  add({ key: "trashDays", kind: "step", title: "Keep trash for", subtitle: "Days. Then purged for good", numericValue: clampNamed("trashDays", c.trashDays), min: trash.min, max: trash.max, step: trash.step })
+  add({ key: "maxItems", kind: "step", title: "Keep at most", subtitle: "Archive ceiling, regardless of age", numericValue: clampNamed("maxItems", c.maxItems), min: maxItems.min, max: maxItems.max, step: maxItems.step })
+  add({ key: "clickAction", kind: "enum", title: "Clicking a notification", subtitle: "Never runs the sender's command", optionSet: "clickAction", currentValue: String(c.clickAction || DEFAULTS.clickAction) })
+  add({ key: "showBody", kind: "toggle", title: "Show the message text", subtitle: "Off leaves the sender and subject", checked: !!c.showBody })
+  add({ key: "showPreview", kind: "toggle", title: "Show pictures", subtitle: "Off stops keeping copies of new ones", checked: !!c.showPreview })
+  add({ key: "badge", kind: "enum", title: "Unread mark", subtitle: "On the bar bell", optionSet: "badge", currentValue: String(c.badge || DEFAULTS.badge) })
+  return rows
 }

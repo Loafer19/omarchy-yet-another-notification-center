@@ -55,7 +55,7 @@ Item {
 
   function load() {
     if (!listProc.running) {
-      listProc.command = root.storeCommand(["list", String(Model.clampInt(root.cfg.displayLimit, 10, 500, 50))])
+      listProc.command = root.storeCommand(["list", String(Model.clampNamed("displayLimit", root.cfg.displayLimit))])
       listProc.running = true
     }
     if (!trashProc.running) {

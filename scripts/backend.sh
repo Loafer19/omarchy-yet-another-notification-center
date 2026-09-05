@@ -5,6 +5,8 @@
 set -uo pipefail
 umask 077
 
+plugin_root=$(cd "$(dirname -- "$0")/.." && pwd)
+defaults_js=$plugin_root/defaults.js
 state_home=${XDG_STATE_HOME:-$HOME/.local/state}
 src_dir=${YANC_SRC_DIR:-$state_home/omarchy/notifications}
 src_history=${YANC_SRC_HISTORY:-$src_dir/history}
@@ -27,32 +29,18 @@ die() {
 }
 
 command -v jq >/dev/null 2>&1 || die "jq is not installed"
+[[ -f $defaults_js ]] || die "defaults.js is missing"
 
 with_lock() {
   ( exec 9>"$lock_file"; flock 9; "$@" )
 }
 
-default_settings_json() {
-  cat <<'JSON'
-{
-  "displayLimit": 50,
-  "keepDays": 30,
-  "maxItems": 1000,
-  "trashDays": 30,
-  "autoHideMs": 0,
-  "soundEnabled": true,
-  "defaultSound": "message-new-instant",
-  "soundLow": "complete",
-  "soundNormal": "message-new-instant",
-  "soundCritical": "dialog-warning",
-  "muteSoundWhenDnd": true,
-  "appSounds": {},
-  "badge": "Dot",
-  "clickAction": "Auto",
-  "showBody": true,
-  "showPreview": true
+defaults_config() {
+  awk 'BEGIN{p=0} /^var CONFIG = \{/ {p=1; sub(/^var CONFIG = /, "")} p' "$defaults_js"
 }
-JSON
+
+default_settings_json() {
+  defaults_config | jq -c '.defaults'
 }
 
 ensure_store() {
@@ -70,13 +58,20 @@ now_ms() { printf '%s' "$(($(date +%s%N) / 1000000))"; }
 
 load_runtime_limits() {
   [[ -f $settings_file ]] || return 0
-  local kd mi td
+  local kd mi td cfg
+  cfg=$(defaults_config)
   kd=$(jq -r '.keepDays // empty' "$settings_file" 2>/dev/null || true)
   mi=$(jq -r '.maxItems // empty' "$settings_file" 2>/dev/null || true)
   td=$(jq -r '.trashDays // empty' "$settings_file" 2>/dev/null || true)
-  [[ $kd =~ ^[0-9]+$ ]] && (( kd >= 1 && kd <= 365 )) && keep_days=$kd
-  [[ $mi =~ ^[0-9]+$ ]] && (( mi >= 50 && mi <= 10000 )) && max_items=$mi
-  [[ $td =~ ^[0-9]+$ ]] && (( td >= 1 && td <= 365 )) && trash_days=$td
+  if [[ $kd =~ ^[0-9]+$ ]]; then
+    keep_days=$(printf '%s' "$cfg" | jq -r --argjson v "$kd" '.limits.keepDays | if $v >= .min and $v <= .max then $v else .fallback end')
+  fi
+  if [[ $mi =~ ^[0-9]+$ ]]; then
+    max_items=$(printf '%s' "$cfg" | jq -r --argjson v "$mi" '.limits.maxItems | if $v >= .min and $v <= .max then $v else .fallback end')
+  fi
+  if [[ $td =~ ^[0-9]+$ ]]; then
+    trash_days=$(printf '%s' "$cfg" | jq -r --argjson v "$td" '.limits.trashDays | if $v >= .min and $v <= .max then $v else .fallback end')
+  fi
 }
 
 valid_key() {
@@ -84,10 +79,7 @@ valid_key() {
 }
 
 valid_sound() {
-  case ${1:-} in
-    mute|message-new-instant|dialog-warning|dialog-error|complete|bell|camera-shutter|alarm-clock-elapsed|phone-incoming-call) return 0 ;;
-    *) return 1 ;;
-  esac
+  defaults_config | jq -e --arg id "${1:-}" '(.sounds | map(.id) | index($id)) != null' >/dev/null
 }
 
 themed_icon() {
@@ -503,37 +495,33 @@ cmd_settings_set() {
 
 merge_settings() {
   local patch=$1
-  jq -c --argjson patch "$patch" --argjson defaults "$(default_settings_json)" '
+  jq -c --argjson patch "$patch" --argjson shared "$(defaults_config | jq -c .)" '
+    def S: $shared;
     def clamp(v; lo; hi; fb):
       ((v | tonumber? // fb) | if . < lo then lo elif . > hi then hi else . end);
+    def clamp_named(name; v):
+      S.limits[name] as $l | clamp(v; $l.min; $l.max; $l.fallback);
     def as_bool(v; fb):
       if v == true then true elif v == false then false else fb end;
     def sound:
-      if . == "email" or . == "message" then "message-new-instant"
-      elif . == "warning" then "dialog-warning"
-      elif . == "camera" then "camera-shutter"
-      elif . == "mute" or . == "message-new-instant" or . == "dialog-warning"
-           or . == "dialog-error" or . == "complete" or . == "bell"
-           or . == "camera-shutter" or . == "alarm-clock-elapsed"
-           or . == "phone-incoming-call" then .
-      else "message-new-instant" end;
-    def badge:
-      if . == "Dot" or . == "Highlight" or . == "Count" or . == "None" then . else "Dot" end;
-    def click:
-      if . == "Auto" or . == "Focus the app" or . == "Nothing" then . else "Auto" end;
+      (S.soundAliases[.] // .) as $id
+      | if (S.sounds | map(.id) | index($id)) != null then $id else S.defaults.defaultSound end;
+    def pick_enum(name):
+      . as $v
+      | if (S.enums[name] | index($v)) != null then $v else S.defaults[name] end;
     def sounds(obj):
       (obj // {})
       | to_entries
       | map(select(.key | test("^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$")))
       | map({key: .key[0:64], value: (.value | tostring | sound)})
       | from_entries;
-    ($defaults + .) as $cur
+    (S.defaults + .) as $cur
     | {
-        displayLimit: clamp($patch.displayLimit // $cur.displayLimit; 10; 500; 50),
-        keepDays: clamp($patch.keepDays // $cur.keepDays; 1; 365; 30),
-        maxItems: clamp($patch.maxItems // $cur.maxItems; 50; 10000; 1000),
-        trashDays: clamp($patch.trashDays // $cur.trashDays; 1; 365; 30),
-        autoHideMs: clamp($patch.autoHideMs // $cur.autoHideMs; 0; 30000; 0),
+        displayLimit: clamp_named("displayLimit"; $patch.displayLimit // $cur.displayLimit),
+        keepDays: clamp_named("keepDays"; $patch.keepDays // $cur.keepDays),
+        maxItems: clamp_named("maxItems"; $patch.maxItems // $cur.maxItems),
+        trashDays: clamp_named("trashDays"; $patch.trashDays // $cur.trashDays),
+        autoHideMs: clamp_named("autoHideMs"; $patch.autoHideMs // $cur.autoHideMs),
         soundEnabled: as_bool($patch.soundEnabled // $cur.soundEnabled; true),
         defaultSound: (($patch.defaultSound // $cur.defaultSound) | tostring | sound),
         soundLow: (($patch.soundLow // $cur.soundLow) | tostring | sound),
@@ -541,8 +529,8 @@ merge_settings() {
         soundCritical: (($patch.soundCritical // $cur.soundCritical) | tostring | sound),
         muteSoundWhenDnd: as_bool($patch.muteSoundWhenDnd // $cur.muteSoundWhenDnd; true),
         appSounds: sounds($patch.appSounds // $cur.appSounds),
-        badge: (($patch.badge // $cur.badge) | tostring | badge),
-        clickAction: (($patch.clickAction // $cur.clickAction) | tostring | click),
+        badge: (($patch.badge // $cur.badge) | tostring | pick_enum("badge")),
+        clickAction: (($patch.clickAction // $cur.clickAction) | tostring | pick_enum("clickAction")),
         showBody: as_bool($patch.showBody // $cur.showBody; true),
         showPreview: as_bool($patch.showPreview // $cur.showPreview; true)
       }
@@ -560,13 +548,14 @@ cmd_apps() {
 }
 
 sound_event() {
-  case $1 in
-    email|message) printf '%s' "message-new-instant" ;;
-    warning) printf '%s' "dialog-warning" ;;
-    camera) printf '%s' "camera-shutter" ;;
-    mute|"") printf '%s' "" ;;
-    *) printf '%s' "$1" ;;
-  esac
+  local id=${1:-}
+  [[ -n $id ]] || { printf '%s' ""; return; }
+  defaults_config | jq -r --arg id "$id" '
+    ( .soundAliases[$id] // $id ) as $event
+    | if $event == "mute" then empty
+      elif (.sounds | map(.id) | index($event)) != null then $event
+      else empty end
+  '
 }
 
 cmd_play_sound() {
