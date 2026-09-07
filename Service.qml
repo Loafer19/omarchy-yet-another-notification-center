@@ -21,6 +21,14 @@ Item {
   property var apps: []
   property double lastSeen: 0
   property bool loaded: false
+  property bool doNotDisturb: false
+
+  readonly property string dndSettingsPath: {
+    var state = Quickshell.env("XDG_STATE_HOME")
+    var home = Quickshell.env("HOME")
+    var rootDir = state ? state : (home + "/.local/state")
+    return rootDir + "/omarchy/notifications.json"
+  }
 
   readonly property int unread: {
     var count = 0
@@ -44,13 +52,43 @@ Item {
   }
 
   function notificationService() {
-    var id = "omarchy.notifications"
-    if (pluginRegistry && typeof pluginRegistry.resolveEnabledId === "function")
-      id = pluginRegistry.resolveEnabledId(id)
     if (!shell) return null
-    if (typeof shell.serviceFor === "function") return shell.serviceFor(id)
-    if (typeof shell.firstPartyServiceFor === "function") return shell.firstPartyServiceFor(id)
-    return null
+    var n = null
+    if (typeof shell.firstPartyServiceFor === "function")
+      n = shell.firstPartyServiceFor("omarchy.notifications")
+    if (!n && typeof shell.serviceFor === "function")
+      n = shell.serviceFor("omarchy.notifications")
+    return n
+  }
+
+  function readDnd(raw) {
+    try {
+      var data = JSON.parse(String(raw || "{}"))
+      if (data && typeof data.dnd === "boolean") root.doNotDisturb = data.dnd
+    } catch (e) {}
+  }
+
+  function applyDndState(text) {
+    var s = String(text || "").replace(/^\s+|\s+$/g, "").toLowerCase()
+    if (s === "on") root.doNotDisturb = true
+    else if (s === "off") root.doNotDisturb = false
+  }
+
+  function refreshDnd() {
+    if (dndProc.running) return
+    dndProc.running = true
+  }
+
+  function toggleDnd() {
+    var n = root.notificationService()
+    if (n && typeof n.setDoNotDisturb === "function") {
+      n.setDoNotDisturb(!n.doNotDisturb)
+      root.doNotDisturb = n.doNotDisturb === true
+      return
+    }
+    root.doNotDisturb = !root.doNotDisturb
+    Quickshell.execDetached(["omarchy-shell", "notifications", "toggleDnd"])
+    Qt.callLater(root.refreshDnd)
   }
 
   function load() {
@@ -96,6 +134,7 @@ Item {
     root.cfg = next
     root.settingsChanged()
     Quickshell.execDetached(root.storeCommand(["settings-set", JSON.stringify(patch)]))
+    if (key === "autoHideMs") Qt.callLater(root.scheduleAutoHide)
     if (key === "keepDays" || key === "maxItems" || key === "displayLimit" || key === "trashDays")
       Qt.callLater(root.load)
   }
@@ -168,34 +207,55 @@ Item {
 
   function maybePlay(entry) {
     var cfg = root.cfg || {}
-    if (!cfg.soundEnabled) return
+    if (cfg.soundEnabled === false) return
     var n = root.notificationService()
-    if (cfg.muteSoundWhenDnd && n && n.doNotDisturb) return
+    var dnd = root.doNotDisturb === true || (n && n.doNotDisturb === true)
+    if (cfg.muteSoundWhenDnd !== false && dnd) return
     root.playSound(Model.soundFor(entry, cfg))
+    root.scheduleAutoHide()
   }
 
   function hideAllToasts() {
     var n = root.notificationService()
-    if (!n) return
-    if (typeof n.clearPopups === "function") {
+    if (n && typeof n.clearPopups === "function") {
       n.clearPopups()
       return
     }
-    if (!n.popupModel || typeof n.dismissPopup !== "function") return
-    var guard = 0
-    while (n.popupModel.count > 0 && guard < 32) {
-      n.dismissPopup(0)
-      guard++
+    if (n && n.popupModel && typeof n.dismissPopup === "function") {
+      var guard = 0
+      while (n.popupModel.count > 0 && guard < 32) {
+        n.dismissPopup(0)
+        guard++
+      }
+      if (guard > 0) return
     }
+    Quickshell.execDetached(["omarchy-shell", "notifications", "dismissAll"])
+  }
+
+  function scheduleAutoHide() {
+    var ms = Number(root.cfg.autoHideMs || 0)
+    if (ms <= 0) {
+      hideTimer.stop()
+      return
+    }
+    hideTimer.interval = ms
+    hideTimer.restart()
   }
 
   property int lastPopupCount: 0
 
   function noteToasts() {
     var n = root.notificationService()
-    var count = n && n.popupModel ? n.popupModel.count : 0
+    var hasModel = !!(n && n.popupModel)
+    var count = hasModel ? n.popupModel.count : 0
     var ms = Number(root.cfg.autoHideMs || 0)
-    if (count === 0 || ms <= 0) {
+    if (ms <= 0) {
+      hideTimer.stop()
+      root.lastPopupCount = count
+      return
+    }
+    if (!hasModel) return
+    if (count === 0) {
       hideTimer.stop()
     } else if (count > root.lastPopupCount) {
       hideTimer.interval = ms
@@ -205,6 +265,31 @@ Item {
       hideTimer.start()
     }
     root.lastPopupCount = count
+  }
+
+  FileView {
+    id: dndFile
+    path: root.dndSettingsPath
+    watchChanges: true
+    printErrors: false
+    preload: true
+    onLoaded: root.readDnd(text())
+    onFileChanged: reload()
+  }
+
+  Process {
+    id: dndProc
+    command: ["omarchy-shell", "notifications", "dndState"]
+    stdout: StdioCollector {
+      onStreamFinished: root.applyDndState(text)
+    }
+  }
+
+  Timer {
+    interval: 2000
+    running: true
+    repeat: true
+    onTriggered: root.refreshDnd()
   }
 
   Process {
@@ -296,6 +381,7 @@ Item {
         if (!data || typeof data !== "object") return
         root.cfg = Model.mergeSettings(data)
         root.settingsChanged()
+        root.scheduleAutoHide()
       }
     }
   }
@@ -313,6 +399,8 @@ Item {
   }
 
   Component.onCompleted: {
+    root.readDnd(dndFile.text())
+    root.refreshDnd()
     loadSettings()
     readSeen()
     load()

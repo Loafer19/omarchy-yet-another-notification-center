@@ -264,6 +264,14 @@ function optionsFor(set) {
   return []
 }
 
+function newestFirst(entries) {
+  var list = (entries || []).slice()
+  list.sort(function(a, b) {
+    return Number(b.timestamp || 0) - Number(a.timestamp || 0)
+  })
+  return list
+}
+
 function visibleEntries(entries, needle, urgencyFilter) {
   var out = []
   var list = entries || []
@@ -272,7 +280,7 @@ function visibleEntries(entries, needle, urgencyFilter) {
     if (matches(list[i], needle) && matchesUrgency(list[i], urgencyFilter))
       out.push(rowFor(list[i], 0))
   }
-  return out
+  return newestFirst(out)
 }
 
 function rowsFor(entries) {
@@ -280,7 +288,7 @@ function rowsFor(entries) {
   var list = entries || []
   var i
   for (i = 0; i < list.length; i++) out.push(rowFor(list[i], 0))
-  return out
+  return newestFirst(out)
 }
 
 function limitOf(name) {

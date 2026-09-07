@@ -342,10 +342,11 @@ clamp_limit() {
 list_file() {
   local src=$1 limit
   limit=$(clamp_limit "${2:-200}")
-  tac "$src" 2>/dev/null \
-    | jq -Rc 'fromjson? // empty' 2>/dev/null \
-    | head -n "$limit" \
-    | jq -s '.' 2>/dev/null || printf '[]\n'
+  [[ -s $src ]] || { printf '[]\n'; return; }
+  # Do not pipe through head: pipefail would append a second [] after a
+  # successful array once the archive is larger than the display limit.
+  jq -n --argjson n "$limit" '[inputs] | sort_by(.timestamp // 0) | reverse | .[:$n]' "$src" 2>/dev/null \
+    || printf '[]\n'
 }
 
 cmd_list() { ensure_store; list_file "$archive" "${1:-200}"; }

@@ -64,17 +64,26 @@ Panel {
   readonly property var notificationService: {
     var host = bar && bar.shell ? bar.shell : null
     if (!host) return null
-    var id = "omarchy.notifications"
-    if (host.pluginRegistry && typeof host.pluginRegistry.resolveEnabledId === "function")
-      id = host.pluginRegistry.resolveEnabledId(id)
-    if (typeof host.serviceFor === "function") return host.serviceFor(id)
-    if (typeof host.firstPartyServiceFor === "function") return host.firstPartyServiceFor(id)
-    return null
+    var n = null
+    if (typeof host.firstPartyServiceFor === "function")
+      n = host.firstPartyServiceFor("omarchy.notifications")
+    if (!n && typeof host.serviceFor === "function")
+      n = host.serviceFor("omarchy.notifications")
+    return n
   }
-  readonly property bool dnd: notificationService ? notificationService.doNotDisturb : false
+  readonly property bool dnd: {
+    var n = notificationService
+    if (n && n.doNotDisturb !== undefined) return n.doNotDisturb === true
+    return store ? store.doNotDisturb === true : false
+  }
 
   function toggleDnd() {
-    if (notificationService) notificationService.setDoNotDisturb(!notificationService.doNotDisturb)
+    var n = notificationService
+    if (n && typeof n.setDoNotDisturb === "function") {
+      n.setDoNotDisturb(!n.doNotDisturb)
+      return
+    }
+    if (store && store.toggleDnd) store.toggleDnd()
   }
 
   function toggleAutoHide() {
@@ -309,7 +318,7 @@ Panel {
       return
     }
     if (root.activeTab === "history" && selectedIndex >= 0 && selectedIndex < historyView.length)
-      root.activate(historyView[selectedIndex])
+      root.activateAt(historyList, selectedIndex, historyView[selectedIndex])
     else if (root.activeTab === "trash" && selectedIndex >= 0 && selectedIndex < trashView.length)
       root.restoreRow(trashView[selectedIndex])
     else if (root.activeTab === "settings")
@@ -323,12 +332,49 @@ Panel {
       root.purgeRow(trashView[selectedIndex])
   }
 
-  Process { id: focusProc }
+  property var pendingFocus: null
 
-  function activate(row) {
-    if (!row) return
+  Process {
+    id: focusProc
+    onExited: function(exitCode) {
+      var pending = root.pendingFocus
+      root.pendingFocus = null
+      if (exitCode === 0) {
+        root.close()
+        return
+      }
+      if (!pending) return
+      var wrap = pending.list && pending.list.itemAtIndex ? pending.list.itemAtIndex(pending.index) : null
+      if (wrap && wrap.showNotice)
+        wrap.showNotice("No window", root.noticeIdentity(pending.row))
+    }
+  }
+
+  function noticeIdentity(row) {
+    var app = String((row && row.app) || "").replace(/^\s+|\s+$/g, "")
+    if (!app) app = "Notification"
+    var summary = String((row && row.summary) || "").replace(/^\s+|\s+$/g, "")
+    if (summary.length > 42) summary = summary.slice(0, 41) + "…"
+    if (summary) return app + " · " + summary
+    return app
+  }
+
+  function flashNotice(list, index, title, detail) {
+    var wrap = list && list.itemAtIndex ? list.itemAtIndex(index) : null
+    if (wrap && wrap.showNotice) wrap.showNotice(title, detail)
+  }
+
+  function activateAt(list, index, row) {
+    if (!row) {
+      root.flashNotice(list, index, "Can't open", "")
+      return
+    }
+    var who = root.noticeIdentity(row)
     var action = String(cfg.clickAction || "Auto")
-    if (action === "Nothing") return
+    if (action === "Nothing") {
+      root.flashNotice(list, index, "Clicks are off", who)
+      return
+    }
     if (action === "Auto" && Model.isStoreImage(row.preview || row.file)) {
       var openPath = Model.storeImageUrl(row.preview || row.file).replace(/^file:\/\//, "")
       if (openPath && openPath.charAt(0) === "/" && openPath.indexOf("..") < 0)
@@ -336,10 +382,26 @@ Panel {
       root.close()
       return
     }
-    if (!root.omarchyPath || !Model.isSafeAppName(row.app)) return
+    if (!root.omarchyPath) {
+      root.flashNotice(list, index, "Can't open", who)
+      return
+    }
+    if (!Model.isSafeAppName(row.app)) {
+      root.flashNotice(list, index, String(row.app || "").length ? "Can't open" : "No app to open", who)
+      return
+    }
+    root.pendingFocus = { list: list, index: index, row: row }
+    focusProc.running = false
     focusProc.command = [root.omarchyPath + "/bin/omarchy-hyprland-focus-app", row.app]
     focusProc.running = true
-    root.close()
+  }
+
+  function copyRow(row) {
+    if (!row) return
+    var text = String(row.body || "").replace(/^\s+|\s+$/g, "")
+    if (!text) text = String(row.summary || "").replace(/^\s+|\s+$/g, "")
+    if (!text) return
+    Quickshell.execDetached(["bash", "-c", "printf %s " + Util.shellQuote(text) + " | wl-copy"])
   }
 
   function dismissRow(row) { if (store && row) store.dismiss(row.key) }
@@ -567,6 +629,8 @@ Panel {
             required property var modelData
             width: ListView.view.width
             height: historyCard.implicitHeight
+            function showNotice(title, detail) { historyCard.showNotice(title, detail) }
+
             Yanc.NotificationRow {
               id: historyCard
               width: parent.width
@@ -589,7 +653,8 @@ Panel {
               edgeMargin: root.edgeMargin
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "history" && root.selectedIndex === historyWrap.index
               onRowHovered: root.setRowCursor(historyWrap.index)
-              onRowClicked: root.activate(historyWrap.modelData)
+              onRowClicked: root.activateAt(historyList, historyWrap.index, historyWrap.modelData)
+              onCopyClicked: root.copyRow(historyWrap.modelData)
               onActionClicked: root.dismissRow(historyWrap.modelData)
             }
           }
@@ -641,6 +706,7 @@ Panel {
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "trash" && root.selectedIndex === trashWrap.index
               onRowHovered: root.setRowCursor(trashWrap.index)
               onRowClicked: root.restoreRow(trashWrap.modelData)
+              onCopyClicked: root.copyRow(trashWrap.modelData)
               onActionClicked: root.restoreRow(trashWrap.modelData)
             }
           }

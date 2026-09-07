@@ -22,13 +22,42 @@ CursorSurface {
   property string actionLabel: "Trash"
   property bool actionEnabled: true
   property bool danger: true
+  property bool copyEnabled: true
   property color contentForeground: Color.foreground
   property string contentFontFamily: Style.font.family
   property int edgeMargin: Style.space(6)
 
   signal actionClicked()
+  signal copyClicked()
   signal rowClicked()
   signal rowHovered()
+
+  readonly property string copyText: {
+    var body = String(root.body || "").replace(/^\s+|\s+$/g, "")
+    if (body) return body
+    return String(root.summary || "").replace(/^\s+|\s+$/g, "")
+  }
+  readonly property bool canCopy: root.copyEnabled && root.copyText !== ""
+  property bool copied: false
+  property string noticeTitle: ""
+  property string noticeDetail: ""
+  readonly property bool showingNotice: root.noticeTitle !== ""
+
+  Timer {
+    id: noticeClear
+    interval: 1600
+    onTriggered: {
+      root.copied = false
+      root.noticeTitle = ""
+      root.noticeDetail = ""
+    }
+  }
+
+  function showNotice(title, detail) {
+    root.noticeTitle = String(title || "")
+    root.noticeDetail = String(detail || "")
+    noticeClear.restart()
+  }
 
   readonly property int urgencyLevel: urgency >= 2 ? 2 : (urgency <= 0 ? 0 : 1)
   readonly property color urgencyColor: urgencyLevel === 2
@@ -79,7 +108,7 @@ CursorSurface {
   Row {
     id: row
     anchors.left: parent.left
-    anchors.right: actionBtn.left
+    anchors.right: copyBtn.visible ? copyBtn.left : actionBtn.left
     anchors.leftMargin: root.edgeMargin + Style.space(4)
     anchors.rightMargin: Style.space(8)
     anchors.verticalCenter: parent.verticalCenter
@@ -183,6 +212,49 @@ CursorSurface {
   }
 
   Rectangle {
+    id: copyBtn
+    anchors.right: actionBtn.left
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    z: 2
+    visible: root.canCopy
+    width: visible ? Style.space(40) : 0
+    color: root.copied
+      ? Util.alpha(Color.accent, Style.hoverFillAlpha)
+      : (copyMouse.containsMouse
+        ? Style.hoverFillFor(root.contentForeground, Color.accent, Color.urgent)
+        : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06))
+
+    Text {
+      anchors.centerIn: parent
+      text: root.copied ? "󰄬" : "󰆏"
+      color: root.copied ? Color.accent : root.contentForeground
+      font.family: root.contentFontFamily
+      font.pixelSize: Style.font.icon
+    }
+
+    MouseArea {
+      id: copyMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onContainsMouseChanged: if (containsMouse) root.rowHovered()
+      onClicked: {
+        root.copied = true
+        root.showNotice("Copied", "")
+        root.copyClicked()
+      }
+    }
+
+    PanelToolTip {
+      delay: 0
+      visible: copyMouse.containsMouse || root.copied
+      text: root.copied ? "Copied" : "Copy message"
+      fontFamily: root.contentFontFamily
+    }
+  }
+
+  Rectangle {
     id: actionBtn
     anchors.right: parent.right
     anchors.top: parent.top
@@ -216,6 +288,44 @@ CursorSurface {
       visible: actionMouse.containsMouse && root.actionEnabled
       text: root.actionLabel
       fontFamily: root.contentFontFamily
+    }
+  }
+
+  Rectangle {
+    anchors.fill: parent
+    z: 8
+    radius: Style.cornerRadius
+    visible: root.showingNotice
+    color: Util.alpha(Color.background, 0.82)
+
+    Column {
+      anchors.centerIn: parent
+      width: parent.width - Style.space(16)
+      spacing: Style.space(2)
+
+      Text {
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
+        textFormat: Text.PlainText
+        text: root.noticeTitle
+        color: Color.accent
+        font.family: root.contentFontFamily
+        font.pixelSize: Style.font.body
+        font.bold: true
+      }
+
+      Text {
+        width: parent.width
+        visible: root.noticeDetail !== ""
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
+        textFormat: Text.PlainText
+        text: root.noticeDetail
+        color: root.contentForeground
+        font.family: root.contentFontFamily
+        font.pixelSize: Style.font.caption
+      }
     }
   }
 }
