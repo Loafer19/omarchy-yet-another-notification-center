@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "yoyo.notification-center",
   "name": "Yet Another Notification Center",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "author": "yoyo",
   "license": "MIT",
-  "description": "Notification history, 30-day trash, sounds, and auto-hide — sitting on Omarchy's existing notification daemon",
+  "description": "Notification history, 30-day trash, sounds, and auto-hide \u2014 sitting on Omarchy's existing notification daemon",
   "keepLoaded": true,
   "kinds": [
     "service",
@@ -33,7 +33,12 @@
         "key": "badge",
         "type": "enum",
         "label": "Unread mark",
-        "options": ["Dot", "Highlight", "Count", "None"],
+        "options": [
+          "Dot",
+          "Highlight",
+          "Count",
+          "None"
+        ],
         "defaultValue": "Dot",
         "description": "How the bell shows notifications that arrived since you last opened the center."
       },
@@ -50,12 +55,12 @@
       {
         "key": "displayLimit",
         "type": "integer",
-        "label": "Show at most",
+        "label": "Keep in History",
         "min": 10,
         "max": 500,
         "step": 10,
         "defaultValue": 50,
-        "description": "Cards on the History tab. The archive can be larger."
+        "description": "Older notifications move to Trash automatically."
       },
       {
         "key": "autoHideMs",

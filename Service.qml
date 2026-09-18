@@ -61,34 +61,33 @@ Item {
     return n
   }
 
+  // Single source of truth: notifications.json via FileView.
+  // Polling `dndState` raced the file (CLI lagged behind JSON) and made the
+  // bell/toggle flicker — that is why the old local setDnd/hydrate existed.
   function readDnd(raw) {
     try {
       var data = JSON.parse(String(raw || "{}"))
-      if (data && typeof data.dnd === "boolean") root.doNotDisturb = data.dnd
+      if (data && typeof data.dnd === "boolean")
+        root.doNotDisturb = data.dnd
     } catch (e) {}
   }
 
-  function applyDndState(text) {
-    var s = String(text || "").replace(/^\s+|\s+$/g, "").toLowerCase()
-    if (s === "on") root.doNotDisturb = true
-    else if (s === "off") root.doNotDisturb = false
-  }
-
-  function refreshDnd() {
-    if (dndProc.running) return
-    dndProc.running = true
+  function setDnd(on) {
+    var want = on === true
+    if (root.doNotDisturb === want) return
+    root.doNotDisturb = want
+    var n = root.notificationService()
+    if (n && typeof n.setDoNotDisturb === "function") {
+      n.setDoNotDisturb(want)
+      return
+    }
+    Quickshell.execDetached([
+      "omarchy-shell", "notifications", "setDnd", want ? "on" : "off"
+    ])
   }
 
   function toggleDnd() {
-    var n = root.notificationService()
-    if (n && typeof n.setDoNotDisturb === "function") {
-      n.setDoNotDisturb(!n.doNotDisturb)
-      root.doNotDisturb = n.doNotDisturb === true
-      return
-    }
-    root.doNotDisturb = !root.doNotDisturb
-    Quickshell.execDetached(["omarchy-shell", "notifications", "toggleDnd"])
-    Qt.callLater(root.refreshDnd)
+    root.setDnd(!root.doNotDisturb)
   }
 
   function load() {
@@ -135,8 +134,14 @@ Item {
     root.settingsChanged()
     Quickshell.execDetached(root.storeCommand(["settings-set", JSON.stringify(patch)]))
     if (key === "autoHideMs") Qt.callLater(root.scheduleAutoHide)
-    if (key === "keepDays" || key === "maxItems" || key === "displayLimit" || key === "trashDays")
-      Qt.callLater(root.load)
+    if (key === "keepDays" || key === "maxItems" || key === "displayLimit" || key === "trashDays") {
+      // displayLimit now trims History into Trash — prune before reload so the
+      // list matches the new ceiling instead of only hiding overflow.
+      Qt.callLater(function() {
+        Quickshell.execDetached(root.storeCommand(["prune"]))
+        root.load()
+      })
+    }
   }
 
   function setAppSound(app, sound) {
@@ -173,6 +178,9 @@ Item {
   }
 
   function clearAll() {
+    // Optimistic clear of History; backend moves rows into Trash, so the
+    // follow-up reload must refresh both lists or Trash stays stale until
+    // the next watch event.
     entries = []
     entriesReset()
     Quickshell.execDetached(root.storeCommand(["clear"]))
@@ -183,6 +191,7 @@ Item {
     trashEntries = []
     trashReset()
     Quickshell.execDetached(root.storeCommand(["empty-trash"]))
+    reloadSoon.restart()
   }
 
   function playSound(id) {
@@ -208,9 +217,7 @@ Item {
   function maybePlay(entry) {
     var cfg = root.cfg || {}
     if (cfg.soundEnabled === false) return
-    var n = root.notificationService()
-    var dnd = root.doNotDisturb === true || (n && n.doNotDisturb === true)
-    if (cfg.muteSoundWhenDnd !== false && dnd) return
+    if (cfg.muteSoundWhenDnd !== false && root.doNotDisturb) return
     root.playSound(Model.soundFor(entry, cfg))
     root.scheduleAutoHide()
   }
@@ -275,21 +282,6 @@ Item {
     preload: true
     onLoaded: root.readDnd(text())
     onFileChanged: reload()
-  }
-
-  Process {
-    id: dndProc
-    command: ["omarchy-shell", "notifications", "dndState"]
-    stdout: StdioCollector {
-      onStreamFinished: root.applyDndState(text)
-    }
-  }
-
-  Timer {
-    interval: 2000
-    running: true
-    repeat: true
-    onTriggered: root.refreshDnd()
   }
 
   Process {
@@ -400,7 +392,6 @@ Item {
 
   Component.onCompleted: {
     root.readDnd(dndFile.text())
-    root.refreshDnd()
     loadSettings()
     readSeen()
     load()

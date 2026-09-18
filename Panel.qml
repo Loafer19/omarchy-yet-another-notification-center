@@ -61,29 +61,46 @@ Panel {
   readonly property bool loaded: store ? store.loaded : false
   readonly property bool autoHideOn: Number(cfg.autoHideMs || 0) > 0
 
-  readonly property var notificationService: {
-    var host = bar && bar.shell ? bar.shell : null
-    if (!host) return null
-    var n = null
-    if (typeof host.firstPartyServiceFor === "function")
-      n = host.firstPartyServiceFor("omarchy.notifications")
-    if (!n && typeof host.serviceFor === "function")
-      n = host.serviceFor("omarchy.notifications")
-    return n
-  }
-  readonly property bool dnd: {
-    var n = notificationService
-    if (n && n.doNotDisturb !== undefined) return n.doNotDisturb === true
-    return store ? store.doNotDisturb === true : false
-  }
+  // Bind the toggle to the plugin store only. Mixing first-party
+  // doNotDisturb with FileView/CLI made the control flicker when those
+  // sources briefly disagreed during a write.
+  readonly property bool dnd: store ? store.doNotDisturb === true : false
 
   function toggleDnd() {
-    var n = notificationService
-    if (n && typeof n.setDoNotDisturb === "function") {
-      n.setDoNotDisturb(!n.doNotDisturb)
+    if (store && store.toggleDnd) store.toggleDnd()
+  }
+
+  // Empty trash is permanent — arm on first click, commit on second.
+  // Auto-disarms so a stray click later cannot wipe the bin.
+  property bool emptyTrashArmed: false
+
+  function disarmEmptyTrash() {
+    emptyTrashArmed = false
+    emptyTrashArmTimer.stop()
+  }
+
+  function requestEmptyTrash() {
+    if (!store || trashView.length === 0) {
+      disarmEmptyTrash()
       return
     }
-    if (store && store.toggleDnd) store.toggleDnd()
+    if (!emptyTrashArmed) {
+      emptyTrashArmed = true
+      emptyTrashArmTimer.restart()
+      return
+    }
+    disarmEmptyTrash()
+    store.emptyTrash()
+  }
+
+
+  onTrashViewChanged: if (trashView.length === 0) disarmEmptyTrash()
+
+  Keys.onEscapePressed: function(event) {
+    if (root.emptyTrashArmed) {
+      root.disarmEmptyTrash()
+      event.accepted = true
+    }
   }
 
   function toggleAutoHide() {
@@ -419,6 +436,7 @@ Panel {
   }
 
   onActiveTabChanged: {
+    root.disarmEmptyTrash()
     root.selectedIndex = 0
     root.focusSection = root.activeFilterChips.length > 0 ? "filters" : "rows"
   }
@@ -505,7 +523,7 @@ Panel {
             spacing: Style.space(8)
 
             Text {
-              text: root.filter !== "" ? historyView.length + " matching" : (historyView.length + " kept")
+              text: root.filter !== "" ? historyView.length + " matching" : (historyView.length + " in History")
               color: Qt.darker(root.contentForeground, 1.5)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
@@ -540,12 +558,16 @@ Panel {
             }
 
             Yanc.HeaderChip {
-              visible: historyView.length > 0
+              // Stay visible when empty — disabled instead of vanishing so the
+              // header layout does not jump and the action stays discoverable.
               text: "Clear"
+              enabled: historyView.length > 0
               contentForeground: root.contentForeground
               contentFontFamily: root.contentFontFamily
-              tooltipText: "Move everything in History to Trash"
-              onClicked: if (store) store.clearAll()
+              tooltipText: historyView.length > 0
+                ? "Move everything in History to Trash"
+                : "History is already empty"
+              onClicked: if (root.store) root.store.clearAll()
             }
           }
         }
@@ -582,12 +604,24 @@ Panel {
             anchors.right: parent.right
             anchors.rightMargin: root.edgeMargin
             anchors.verticalCenter: parent.verticalCenter
-            visible: trashView.length > 0
-            text: "Empty trash"
+            text: root.emptyTrashArmed ? "Confirm?" : "Empty trash"
+            on: root.emptyTrashArmed
+            danger: true
+            enabled: trashView.length > 0
             contentForeground: root.contentForeground
             contentFontFamily: root.contentFontFamily
-            tooltipText: "Delete trash forever"
-            onClicked: if (store) store.emptyTrash()
+            tooltipText: trashView.length === 0
+              ? "Trash is already empty"
+              : (root.emptyTrashArmed
+                ? "Click again to delete forever — Esc or wait to cancel"
+                : "Delete trash forever (asks for confirmation)")
+            onClicked: root.requestEmptyTrash()
+          }
+
+          Timer {
+            id: emptyTrashArmTimer
+            interval: 4000
+            onTriggered: root.disarmEmptyTrash()
           }
         }
 
