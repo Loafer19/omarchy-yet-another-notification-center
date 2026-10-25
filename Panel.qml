@@ -76,26 +76,18 @@ Panel {
   }
 
   // Empty trash is permanent — arm on first click, commit on second.
-  // Auto-disarms so a stray click later cannot wipe the bin.
-  property bool emptyTrashArmed: false
+  // Auto-disarms (4 s) so a stray click later cannot wipe the bin. The
+  // two-step logic lives in the chip (HeaderChip confirm mode).
+  readonly property bool emptyTrashArmed: emptyTrashChip.armed
 
-  function disarmEmptyTrash() {
-    emptyTrashArmed = false
-    emptyTrashArmTimer.stop()
-  }
+  function disarmEmptyTrash() { emptyTrashChip.disarm() }
 
   function requestEmptyTrash() {
     if (!store || trashView.length === 0) {
       disarmEmptyTrash()
       return
     }
-    if (!emptyTrashArmed) {
-      emptyTrashArmed = true
-      emptyTrashArmTimer.restart()
-      return
-    }
-    disarmEmptyTrash()
-    store.emptyTrash()
+    emptyTrashChip.activate()
   }
 
 
@@ -598,25 +590,22 @@ Panel {
           }
 
           HeaderChip {
+            id: emptyTrashChip
             anchors.right: parent.right
             anchors.rightMargin: root.edgeMargin
             anchors.verticalCenter: parent.verticalCenter
-            text: root.emptyTrashArmed ? "Confirm?" : "Empty trash"
-            on: root.emptyTrashArmed
+            text: "Empty trash"
+            confirm: true
+            confirmText: "Confirm?"
+            armMs: 4000
             danger: true
             enabled: trashView.length > 0
             tooltipText: trashView.length === 0
               ? "Trash is already empty"
-              : (root.emptyTrashArmed
+              : (emptyTrashChip.armed
                 ? "Click again to delete forever — Esc or wait to cancel"
                 : "Delete trash forever (asks for confirmation)")
-            onClicked: root.requestEmptyTrash()
-          }
-
-          Timer {
-            id: emptyTrashArmTimer
-            interval: 4000
-            onTriggered: root.disarmEmptyTrash()
+            onTriggered: if (root.store) root.store.emptyTrash()
           }
         }
 
@@ -688,6 +677,7 @@ Panel {
         EmptyState {
           anchors.centerIn: parent
           width: parent.width
+          fitContent: true
           topPadding: 0
           bottomPadding: 0
           visible: root.activeTab === "history" && historyView.length === 0
@@ -738,6 +728,7 @@ Panel {
         EmptyState {
           anchors.centerIn: parent
           width: parent.width
+          fitContent: true
           topPadding: 0
           bottomPadding: 0
           visible: root.activeTab === "trash" && trashView.length === 0
@@ -802,6 +793,7 @@ Panel {
         EmptyState {
           anchors.centerIn: parent
           width: parent.width
+          fitContent: true
           topPadding: 0
           bottomPadding: 0
           visible: root.activeTab === "settings" && root.settingsFilter === "apps" && settingsView.length === 0
