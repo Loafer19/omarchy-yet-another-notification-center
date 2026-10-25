@@ -1,3 +1,4 @@
+import qs.Commons as Commons
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -59,7 +60,7 @@ BarWidget {
     text: root.dnd ? "\uDB80\uDC9B" : "\uDB80\uDC9A"
     dimmed: root.dnd
     active: root.badge === "Highlight" && root.unread > 0
-    activeColor: Color.accent
+    activeColor: Commons.Color.accent
     tooltipText: {
       if (root.dnd) return root.unread > 0 ? "Silenced · " + root.unread + " new" : "Notifications silenced"
       if (root.unread === 1) return "1 new notification"
@@ -89,7 +90,7 @@ BarWidget {
     width: Style.space(6)
     height: width
     radius: width / 2
-    color: Color.accent
+    color: Commons.Color.accent
   }
 
   Rectangle {
@@ -101,7 +102,7 @@ BarWidget {
     width: Math.max(countText.implicitWidth + Style.space(6), Style.space(12))
     height: Style.space(12)
     radius: height / 2
-    color: Color.accent
+    color: Commons.Color.accent
 
     Text {
       id: countText
@@ -110,7 +111,7 @@ BarWidget {
       font.family: root.bar ? root.bar.fontFamily : Style.font.family
       font.pixelSize: Math.max(8, Style.font.caption - Style.space(3))
       font.bold: true
-      color: Color.background
+      color: Commons.Color.background
     }
   }
 }

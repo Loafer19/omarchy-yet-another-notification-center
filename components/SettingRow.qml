@@ -1,3 +1,4 @@
+import qs.Commons as Commons
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -16,7 +17,7 @@ CursorSurface {
   property int numericMin: 0
   property int numericMax: 100
   property int numericStep: 1
-  property color contentForeground: Color.foreground
+  property color contentForeground: Commons.Color.foreground
   property string contentFontFamily: Style.font.family
   property int edgeMargin: Style.space(6)
 
@@ -36,7 +37,7 @@ CursorSurface {
   implicitHeight: Math.max(Style.space(52), Math.max(infoCol.implicitHeight, controls.implicitHeight) + Style.space(14))
   height: implicitHeight
   foreground: contentForeground
-  fill: Style.hoverFillFor(contentForeground, Color.accent, Color.urgent)
+  fill: Style.hoverFillFor(contentForeground, Commons.Color.accent, Commons.Color.urgent)
   bordered: false
 
   MouseArea {

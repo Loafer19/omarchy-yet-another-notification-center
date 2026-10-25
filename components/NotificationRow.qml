@@ -1,3 +1,4 @@
+import qs.Commons as Commons
 import QtQuick
 import Quickshell
 import qs.Commons
@@ -23,7 +24,7 @@ CursorSurface {
   property bool actionEnabled: true
   property bool danger: true
   property bool copyEnabled: true
-  property color contentForeground: Color.foreground
+  property color contentForeground: Commons.Color.foreground
   property string contentFontFamily: Style.font.family
   property int edgeMargin: Style.space(6)
 
@@ -61,12 +62,12 @@ CursorSurface {
 
   readonly property int urgencyLevel: urgency >= 2 ? 2 : (urgency <= 0 ? 0 : 1)
   readonly property color urgencyColor: urgencyLevel === 2
-    ? Color.urgent
-    : (urgencyLevel === 0 ? Qt.darker(contentForeground, 1.8) : Color.accent)
+    ? Commons.Color.urgent
+    : (urgencyLevel === 0 ? Qt.darker(contentForeground, 1.8) : Commons.Color.accent)
   readonly property string urgencyLabel: urgencyLevel === 2 ? "Critical" : (urgencyLevel === 0 ? "Low" : "")
 
   foreground: contentForeground
-  fill: Style.hoverFillFor(contentForeground, Color.accent, Color.urgent)
+  fill: Style.hoverFillFor(contentForeground, Commons.Color.accent, Commons.Color.urgent)
   bordered: unread || urgencyLevel === 2
 
   readonly property string previewSource: {
@@ -175,7 +176,7 @@ CursorSurface {
           id: metaLabel
           textFormat: Text.PlainText
           text: (root.urgencyLabel !== "" ? root.urgencyLabel + " · " : "") + root.time
-          color: root.urgencyLevel === 2 ? Color.urgent : Qt.darker(root.contentForeground, 1.5)
+          color: root.urgencyLevel === 2 ? Commons.Color.urgent : Qt.darker(root.contentForeground, 1.5)
           font.family: root.contentFontFamily
           font.pixelSize: Style.font.caption
           font.bold: root.urgencyLevel === 2
@@ -220,15 +221,15 @@ CursorSurface {
     visible: root.canCopy
     width: visible ? Style.space(40) : 0
     color: root.copied
-      ? Util.alpha(Color.accent, Style.hoverFillAlpha)
+      ? Util.alpha(Commons.Color.accent, Style.hoverFillAlpha)
       : (copyMouse.containsMouse
-        ? Style.hoverFillFor(root.contentForeground, Color.accent, Color.urgent)
+        ? Style.hoverFillFor(root.contentForeground, Commons.Color.accent, Commons.Color.urgent)
         : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06))
 
     Text {
       anchors.centerIn: parent
       text: root.copied ? "󰄬" : "󰆏"
-      color: root.copied ? Color.accent : root.contentForeground
+      color: root.copied ? Commons.Color.accent : root.contentForeground
       font.family: root.contentFontFamily
       font.pixelSize: Style.font.icon
     }
@@ -263,13 +264,13 @@ CursorSurface {
     width: Style.space(40)
     opacity: root.actionEnabled ? 1.0 : 0.45
     color: actionMouse.containsMouse && root.actionEnabled
-      ? (root.danger ? Util.alpha(Color.urgent, Style.hoverFillAlpha) : Style.hoverFillFor(root.contentForeground, Color.accent, Color.urgent))
+      ? (root.danger ? Util.alpha(Commons.Color.urgent, Style.hoverFillAlpha) : Style.hoverFillFor(root.contentForeground, Commons.Color.accent, Commons.Color.urgent))
       : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06)
 
     Text {
       anchors.centerIn: parent
       text: root.danger ? "\uDB80\uDDB4" : "\uDB80\uDC6F"
-      color: actionMouse.containsMouse && root.danger ? Color.urgent : root.contentForeground
+      color: actionMouse.containsMouse && root.danger ? Commons.Color.urgent : root.contentForeground
       font.family: root.contentFontFamily
       font.pixelSize: Style.font.icon
     }
@@ -296,7 +297,7 @@ CursorSurface {
     z: 8
     radius: Style.cornerRadius
     visible: root.showingNotice
-    color: Util.alpha(Color.background, 0.82)
+    color: Util.alpha(Commons.Color.background, 0.82)
 
     Column {
       anchors.centerIn: parent
@@ -309,7 +310,7 @@ CursorSurface {
         elide: Text.ElideRight
         textFormat: Text.PlainText
         text: root.noticeTitle
-        color: Color.accent
+        color: Commons.Color.accent
         font.family: root.contentFontFamily
         font.pixelSize: Style.font.body
         font.bold: true

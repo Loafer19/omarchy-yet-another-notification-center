@@ -1,3 +1,4 @@
+import qs.Commons as Commons
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -9,16 +10,16 @@ Rectangle {
   property string tooltipText: ""
   property bool on: false
   property bool enabled: true
-  // When on+danger, fill with Color.urgent (destructive confirms like Empty trash).
+  // When on+danger, fill with Commons.Color.urgent (destructive confirms like Empty trash).
   property bool danger: false
-  property color contentForeground: Color.foreground
+  property color contentForeground: Commons.Color.foreground
   property string contentFontFamily: Style.font.family
 
   signal clicked()
 
-  readonly property color activeFill: root.danger ? Color.urgent : Color.accent
-  readonly property color hoverFill: Style.hoverFillFor(contentForeground, Color.accent, Color.urgent)
-  readonly property color idleFill: Style.normalFillFor(contentForeground, Color.accent, Color.urgent)
+  readonly property color activeFill: root.danger ? Commons.Color.urgent : Commons.Color.accent
+  readonly property color hoverFill: Style.hoverFillFor(contentForeground, Commons.Color.accent, Commons.Color.urgent)
+  readonly property color idleFill: Style.normalFillFor(contentForeground, Commons.Color.accent, Commons.Color.urgent)
   readonly property color borderIdle: Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.12)
 
   width: label.implicitWidth + Style.space(16)
@@ -37,7 +38,7 @@ Rectangle {
     id: label
     anchors.centerIn: parent
     text: root.text
-    color: root.on && root.enabled ? Color.background : root.contentForeground
+    color: root.on && root.enabled ? Commons.Color.background : root.contentForeground
     font.family: root.contentFontFamily
     font.pixelSize: Style.font.caption
     font.bold: true

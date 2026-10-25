@@ -1,3 +1,4 @@
+import qs.Commons as Commons
 import QtQuick
 import QtQuick.Controls
 import Quickshell
@@ -18,7 +19,7 @@ Panel {
   readonly property var barIdentity: hostWidget || root
   readonly property string omarchyPath: Quickshell.env("OMARCHY_PATH")
 
-  readonly property color contentForeground: bar ? bar.foreground : Color.foreground
+  readonly property color contentForeground: bar ? bar.foreground : Commons.Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property color dividerColor: Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.12)
   readonly property int edgeMargin: Style.space(6)
