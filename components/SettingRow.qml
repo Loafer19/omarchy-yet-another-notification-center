@@ -1,8 +1,8 @@
-import qs.Commons as Commons
 import QtQuick
 import qs.Commons
 import qs.Ui
 import "../Model.js" as Model
+import "../vendor/yoyo-ui"
 
 CursorSurface {
   id: root
@@ -17,8 +17,6 @@ CursorSurface {
   property int numericMin: 0
   property int numericMax: 100
   property int numericStep: 1
-  property color contentForeground: Commons.Color.foreground
-  property string contentFontFamily: Style.font.family
   property int edgeMargin: Style.space(6)
 
   readonly property bool isEnum: kind === "enum" || kind === "appSound"
@@ -36,8 +34,8 @@ CursorSurface {
 
   implicitHeight: Math.max(Style.space(52), Math.max(infoCol.implicitHeight, controls.implicitHeight) + Style.space(14))
   height: implicitHeight
-  foreground: contentForeground
-  fill: Style.hoverFillFor(contentForeground, Commons.Color.accent, Commons.Color.urgent)
+  foreground: Theme.fg
+  fill: Theme.hoverFill
   bordered: false
 
   MouseArea {
@@ -63,8 +61,8 @@ CursorSurface {
       visible: root.title !== ""
       textFormat: Text.PlainText
       text: root.title
-      color: root.contentForeground
-      font.family: root.contentFontFamily
+      color: Theme.fg
+      font.family: Theme.fontFamily
       font.pixelSize: Style.font.body
       font.bold: true
     }
@@ -74,8 +72,8 @@ CursorSurface {
       visible: root.subtitle !== ""
       textFormat: Text.PlainText
       text: root.subtitle
-      color: Qt.darker(root.contentForeground, 1.5)
-      font.family: root.contentFontFamily
+      color: Theme.dim
+      font.family: Theme.fontFamily
       font.pixelSize: Style.font.caption
     }
   }
@@ -106,8 +104,8 @@ CursorSurface {
       from: root.numericMin
       to: root.numericMax
       stepSize: root.numericStep
-      foreground: root.contentForeground
-      fontFamily: root.contentFontFamily
+      foreground: Theme.fg
+      fontFamily: Theme.fontFamily
       fieldWidth: parent.width
       hasCursor: root.hasCursor
       onModified: function(v) { root.numberPicked(v) }
@@ -124,8 +122,8 @@ CursorSurface {
       label: ""
       value: root.currentValue
       options: root.options
-      foreground: root.contentForeground
-      fontFamily: root.contentFontFamily
+      foreground: Theme.fg
+      fontFamily: Theme.fontFamily
       hasCursor: root.hasCursor
       onChanged: function(v) { root.valuePicked(v) }
       onHovered: function(on) { if (on) root.rowHovered() }
@@ -140,8 +138,8 @@ CursorSurface {
       text: "Play"
       bordered: true
       fontSize: Style.font.caption
-      foreground: root.contentForeground
-      fontFamily: root.contentFontFamily
+      foreground: Theme.fg
+      fontFamily: Theme.fontFamily
       tooltipText: "Play this sound"
       onClicked: root.playClicked()
       onHovered: function(on) { if (on) root.rowHovered() }

@@ -1,9 +1,9 @@
-import qs.Commons as Commons
 import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "vendor/yoyo-ui"
 
 BarWidget {
   id: root
@@ -60,7 +60,7 @@ BarWidget {
     text: root.dnd ? "\uDB80\uDC9B" : "\uDB80\uDC9A"
     dimmed: root.dnd
     active: root.badge === "Highlight" && root.unread > 0
-    activeColor: Commons.Color.accent
+    activeColor: Theme.accent
     tooltipText: {
       if (root.dnd) return root.unread > 0 ? "Silenced · " + root.unread + " new" : "Notifications silenced"
       if (root.unread === 1) return "1 new notification"
@@ -90,7 +90,7 @@ BarWidget {
     width: Style.space(6)
     height: width
     radius: width / 2
-    color: Commons.Color.accent
+    color: Theme.accent
   }
 
   Rectangle {
@@ -102,7 +102,7 @@ BarWidget {
     width: Math.max(countText.implicitWidth + Style.space(6), Style.space(12))
     height: Style.space(12)
     radius: height / 2
-    color: Commons.Color.accent
+    color: Theme.accent
 
     Text {
       id: countText
@@ -111,7 +111,7 @@ BarWidget {
       font.family: root.bar ? root.bar.fontFamily : Style.font.family
       font.pixelSize: Math.max(8, Style.font.caption - Style.space(3))
       font.bold: true
-      color: Commons.Color.background
+      color: Theme.background
     }
   }
 }

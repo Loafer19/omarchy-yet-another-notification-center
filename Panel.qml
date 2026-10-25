@@ -7,6 +7,7 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 import "components" as Yanc
+import "vendor/yoyo-ui"
 
 Panel {
   id: root
@@ -21,8 +22,11 @@ Panel {
 
   readonly property color contentForeground: bar ? bar.foreground : Commons.Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property color dividerColor: Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.12)
   readonly property int edgeMargin: Style.space(6)
+
+  // Shared yoyo-ui Theme follows the bar this panel opens from.
+  Binding { target: Theme; property: "foreground"; value: root.contentForeground }
+  Binding { target: Theme; property: "fontFamily"; value: root.contentFontFamily }
 
   property string activeTab: "history"
   property string historyFilter: "all"
@@ -496,11 +500,9 @@ Panel {
         anchors.right: parent.right
         spacing: Style.space(8)
 
-        Yanc.ChipRow {
+        ChipRow {
           chips: root.tabs
           selectedKey: root.activeTab
-          foreground: root.contentForeground
-          fontFamily: root.contentFontFamily
           cursorActive: root.cursorActive && root.focusSection === "tabs"
           cursorIndex: root.cursorActive && root.focusSection === "tabs" ? root.selectedIndex : -1
           onSelected: function(key) {
@@ -510,7 +512,7 @@ Panel {
           onChipHovered: function(index) { root.setTabsCursor(index) }
         }
 
-        Rectangle { width: parent.width; height: Style.spacing.hairline; color: root.dividerColor }
+        Rectangle { width: parent.width; height: Style.spacing.hairline; color: Theme.line }
 
         Item {
           width: parent.width
@@ -525,8 +527,8 @@ Panel {
 
             Text {
               text: root.filter !== "" ? historyView.length + " matching" : (historyView.length + " in History")
-              color: Qt.darker(root.contentForeground, 1.5)
-              font.family: root.contentFontFamily
+              color: Theme.dim
+              font.family: Theme.fontFamily
               font.pixelSize: Style.font.caption
               anchors.verticalCenter: parent.verticalCenter
             }
@@ -538,33 +540,27 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(6)
 
-            Yanc.HeaderChip {
+            HeaderChip {
               text: "DND"
               on: root.dnd
-              contentForeground: root.contentForeground
-              contentFontFamily: root.contentFontFamily
               tooltipText: root.dnd ? "Allow notifications" : "Silence notifications"
               onClicked: root.toggleDnd()
             }
 
-            Yanc.HeaderChip {
+            HeaderChip {
               text: "Auto-hide"
               on: root.autoHideOn
-              contentForeground: root.contentForeground
-              contentFontFamily: root.contentFontFamily
               tooltipText: root.autoHideOn
                 ? "Toasts stay up — Omarchy never expires critical on its own"
                 : "Hide all toasts automatically, including critical"
               onClicked: root.toggleAutoHide()
             }
 
-            Yanc.HeaderChip {
+            HeaderChip {
               // Stay visible when empty — disabled instead of vanishing so the
               // header layout does not jump and the action stays discoverable.
               text: "Clear"
               enabled: historyView.length > 0
-              contentForeground: root.contentForeground
-              contentFontFamily: root.contentFontFamily
               tooltipText: historyView.length > 0
                 ? "Move everything in History to Trash"
                 : "History is already empty"
@@ -596,12 +592,12 @@ Panel {
               var kept = days === 1 ? "1 day" : days + " days"
               return trashView.length === 0 ? "Empty · kept " + kept : trashView.length + " in trash · " + kept
             }
-            color: Qt.darker(root.contentForeground, 1.5)
-            font.family: root.contentFontFamily
+            color: Theme.dim
+            font.family: Theme.fontFamily
             font.pixelSize: Style.font.caption
           }
 
-          Yanc.HeaderChip {
+          HeaderChip {
             anchors.right: parent.right
             anchors.rightMargin: root.edgeMargin
             anchors.verticalCenter: parent.verticalCenter
@@ -609,8 +605,6 @@ Panel {
             on: root.emptyTrashArmed
             danger: true
             enabled: trashView.length > 0
-            contentForeground: root.contentForeground
-            contentFontFamily: root.contentFontFamily
             tooltipText: trashView.length === 0
               ? "Trash is already empty"
               : (root.emptyTrashArmed
@@ -626,13 +620,11 @@ Panel {
           }
         }
 
-        Yanc.ChipRow {
+        ChipRow {
           visible: root.activeFilterChips.length > 0
           compact: true
           chips: root.activeFilterChips
           selectedKey: root.activeFilterKey
-          foreground: root.contentForeground
-          fontFamily: root.contentFontFamily
           cursorActive: root.cursorActive && root.focusSection === "filters"
           cursorIndex: root.cursorActive && root.focusSection === "filters" ? root.selectedIndex : -1
           onSelected: function(key) {
@@ -683,8 +675,6 @@ Panel {
               showPreview: !!root.cfg.showPreview
               actionLabel: "Trash"
               danger: true
-              contentForeground: root.contentForeground
-              contentFontFamily: root.contentFontFamily
               edgeMargin: root.edgeMargin
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "history" && root.selectedIndex === historyWrap.index
               onRowHovered: root.setRowCursor(historyWrap.index)
@@ -695,15 +685,15 @@ Panel {
           }
         }
 
-        Text {
+        EmptyState {
           anchors.centerIn: parent
+          width: parent.width
+          topPadding: 0
+          bottomPadding: 0
           visible: root.activeTab === "history" && historyView.length === 0
-          text: !root.loaded ? "Reading the archive…"
+          title: !root.loaded ? "Reading the archive…"
             : (root.filter !== "" || root.historyFilter !== "all") ? "Nothing matches"
             : "Nothing has come in yet"
-          color: Qt.darker(root.contentForeground, 1.5)
-          font.family: root.contentFontFamily
-          font.pixelSize: Style.font.body
         }
 
         ListView {
@@ -735,8 +725,6 @@ Panel {
               showPreview: !!root.cfg.showPreview
               actionLabel: "Restore"
               danger: false
-              contentForeground: root.contentForeground
-              contentFontFamily: root.contentFontFamily
               edgeMargin: root.edgeMargin
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "trash" && root.selectedIndex === trashWrap.index
               onRowHovered: root.setRowCursor(trashWrap.index)
@@ -747,13 +735,13 @@ Panel {
           }
         }
 
-        Text {
+        EmptyState {
           anchors.centerIn: parent
+          width: parent.width
+          topPadding: 0
+          bottomPadding: 0
           visible: root.activeTab === "trash" && trashView.length === 0
-          text: "Trash is empty"
-          color: Qt.darker(root.contentForeground, 1.5)
-          font.family: root.contentFontFamily
-          font.pixelSize: Style.font.body
+          title: "Trash is empty"
         }
 
         ListView {
@@ -782,8 +770,6 @@ Panel {
               numericMin: settingWrap.modelData.min
               numericMax: settingWrap.modelData.max
               numericStep: settingWrap.modelData.step
-              contentForeground: root.contentForeground
-              contentFontFamily: root.contentFontFamily
               edgeMargin: root.edgeMargin
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "settings" && root.selectedIndex === settingWrap.index
               onRowHovered: root.setRowCursor(settingWrap.index)
@@ -813,13 +799,13 @@ Panel {
           }
         }
 
-        Text {
+        EmptyState {
           anchors.centerIn: parent
+          width: parent.width
+          topPadding: 0
+          bottomPadding: 0
           visible: root.activeTab === "settings" && root.settingsFilter === "apps" && settingsView.length === 0
-          text: "No apps in the archive yet"
-          color: Qt.darker(root.contentForeground, 1.5)
-          font.family: root.contentFontFamily
-          font.pixelSize: Style.font.body
+          title: "No apps in the archive yet"
         }
       }
     }

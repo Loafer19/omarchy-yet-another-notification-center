@@ -1,9 +1,9 @@
-import qs.Commons as Commons
 import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
 import "../Model.js" as Model
+import "../vendor/yoyo-ui"
 
 CursorSurface {
   id: root
@@ -24,8 +24,6 @@ CursorSurface {
   property bool actionEnabled: true
   property bool danger: true
   property bool copyEnabled: true
-  property color contentForeground: Commons.Color.foreground
-  property string contentFontFamily: Style.font.family
   property int edgeMargin: Style.space(6)
 
   signal actionClicked()
@@ -62,12 +60,12 @@ CursorSurface {
 
   readonly property int urgencyLevel: urgency >= 2 ? 2 : (urgency <= 0 ? 0 : 1)
   readonly property color urgencyColor: urgencyLevel === 2
-    ? Commons.Color.urgent
-    : (urgencyLevel === 0 ? Qt.darker(contentForeground, 1.8) : Commons.Color.accent)
+    ? Theme.urgent
+    : (urgencyLevel === 0 ? Theme.faint : Theme.accent)
   readonly property string urgencyLabel: urgencyLevel === 2 ? "Critical" : (urgencyLevel === 0 ? "Low" : "")
 
-  foreground: contentForeground
-  fill: Style.hoverFillFor(contentForeground, Commons.Color.accent, Commons.Color.urgent)
+  foreground: Theme.fg
+  fill: Theme.hoverFill
   bordered: unread || urgencyLevel === 2
 
   readonly property string previewSource: {
@@ -148,7 +146,7 @@ CursorSurface {
         textFormat: Text.PlainText
         text: root.glyph !== "" ? root.glyph : "\uDB80\uDC9A"
         color: root.urgencyColor
-        font.family: root.contentFontFamily
+        font.family: Theme.fontFamily
         font.pixelSize: Style.font.icon
       }
     }
@@ -167,8 +165,8 @@ CursorSurface {
           elide: Text.ElideRight
           textFormat: Text.PlainText
           text: root.app !== "" ? root.app : "Notification"
-          color: Qt.darker(root.contentForeground, 1.5)
-          font.family: root.contentFontFamily
+          color: Theme.dim
+          font.family: Theme.fontFamily
           font.pixelSize: Style.font.caption
         }
 
@@ -176,8 +174,8 @@ CursorSurface {
           id: metaLabel
           textFormat: Text.PlainText
           text: (root.urgencyLabel !== "" ? root.urgencyLabel + " · " : "") + root.time
-          color: root.urgencyLevel === 2 ? Commons.Color.urgent : Qt.darker(root.contentForeground, 1.5)
-          font.family: root.contentFontFamily
+          color: root.urgencyLevel === 2 ? Theme.urgent : Theme.dim
+          font.family: Theme.fontFamily
           font.pixelSize: Style.font.caption
           font.bold: root.urgencyLevel === 2
         }
@@ -191,8 +189,8 @@ CursorSurface {
         elide: Text.ElideRight
         textFormat: Text.PlainText
         text: root.summary
-        color: root.contentForeground
-        font.family: root.contentFontFamily
+        color: Theme.fg
+        font.family: Theme.fontFamily
         font.pixelSize: Style.font.body
         font.bold: true
       }
@@ -205,8 +203,8 @@ CursorSurface {
         elide: Text.ElideRight
         text: root.body
         textFormat: Text.PlainText
-        color: Qt.darker(root.contentForeground, 1.5)
-        font.family: root.contentFontFamily
+        color: Theme.dim
+        font.family: Theme.fontFamily
         font.pixelSize: Style.font.caption
       }
     }
@@ -221,16 +219,16 @@ CursorSurface {
     visible: root.canCopy
     width: visible ? Style.space(40) : 0
     color: root.copied
-      ? Util.alpha(Commons.Color.accent, Style.hoverFillAlpha)
+      ? Util.alpha(Theme.accent, Style.hoverFillAlpha)
       : (copyMouse.containsMouse
-        ? Style.hoverFillFor(root.contentForeground, Commons.Color.accent, Commons.Color.urgent)
-        : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06))
+        ? Theme.hoverFill
+        : Theme.tint(Theme.fg, 0.06))
 
     Text {
       anchors.centerIn: parent
       text: root.copied ? "󰄬" : "󰆏"
-      color: root.copied ? Commons.Color.accent : root.contentForeground
-      font.family: root.contentFontFamily
+      color: root.copied ? Theme.accent : Theme.fg
+      font.family: Theme.fontFamily
       font.pixelSize: Style.font.icon
     }
 
@@ -251,7 +249,7 @@ CursorSurface {
       delay: 0
       visible: copyMouse.containsMouse || root.copied
       text: root.copied ? "Copied" : "Copy message"
-      fontFamily: root.contentFontFamily
+      fontFamily: Theme.fontFamily
     }
   }
 
@@ -264,14 +262,14 @@ CursorSurface {
     width: Style.space(40)
     opacity: root.actionEnabled ? 1.0 : 0.45
     color: actionMouse.containsMouse && root.actionEnabled
-      ? (root.danger ? Util.alpha(Commons.Color.urgent, Style.hoverFillAlpha) : Style.hoverFillFor(root.contentForeground, Commons.Color.accent, Commons.Color.urgent))
-      : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06)
+      ? (root.danger ? Util.alpha(Theme.urgent, Style.hoverFillAlpha) : Theme.hoverFill)
+      : Theme.tint(Theme.fg, 0.06)
 
     Text {
       anchors.centerIn: parent
       text: root.danger ? "\uDB80\uDDB4" : "\uDB80\uDC6F"
-      color: actionMouse.containsMouse && root.danger ? Commons.Color.urgent : root.contentForeground
-      font.family: root.contentFontFamily
+      color: actionMouse.containsMouse && root.danger ? Theme.urgent : Theme.fg
+      font.family: Theme.fontFamily
       font.pixelSize: Style.font.icon
     }
 
@@ -288,7 +286,7 @@ CursorSurface {
     PanelToolTip {
       visible: actionMouse.containsMouse && root.actionEnabled
       text: root.actionLabel
-      fontFamily: root.contentFontFamily
+      fontFamily: Theme.fontFamily
     }
   }
 
@@ -297,7 +295,7 @@ CursorSurface {
     z: 8
     radius: Style.cornerRadius
     visible: root.showingNotice
-    color: Util.alpha(Commons.Color.background, 0.82)
+    color: Util.alpha(Theme.background, 0.82)
 
     Column {
       anchors.centerIn: parent
@@ -310,8 +308,8 @@ CursorSurface {
         elide: Text.ElideRight
         textFormat: Text.PlainText
         text: root.noticeTitle
-        color: Commons.Color.accent
-        font.family: root.contentFontFamily
+        color: Theme.accent
+        font.family: Theme.fontFamily
         font.pixelSize: Style.font.body
         font.bold: true
       }
@@ -323,8 +321,8 @@ CursorSurface {
         elide: Text.ElideRight
         textFormat: Text.PlainText
         text: root.noticeDetail
-        color: root.contentForeground
-        font.family: root.contentFontFamily
+        color: Theme.fg
+        font.family: Theme.fontFamily
         font.pixelSize: Style.font.caption
       }
     }
