@@ -142,5 +142,39 @@ const qml = ["Service.qml", "Panel.qml"].map(f => fs.readFileSync(path.join(dir,
 eq("no fire-and-forget execDetached left in Service/Panel", (qml.match(/execDetached/g) || []).length, 0)
 eq("every run(\"…\") action has a label", [...qml.matchAll(/\brun\("([a-z-]+)"/g)].map(m => m[1]).filter(a => !M.ACTION_LABELS[a]), [])
 
+// --- settings: one source of truth, same rules in JS and the backend ---------------
+const settingsFile = path.join(tmp, "store", "settings.json")
+function backendSet(patch) {
+  fs.rmSync(settingsFile, { force: true })
+  return JSON.parse(backend("settings-set", JSON.stringify(patch)))
+}
+function jsSet(patch) {
+  const raw = Object.assign({}, plain(M.DEFAULTS))
+  for (const k in patch) if (patch[k] !== null) raw[k] = patch[k]
+  return plain(M.mergeSettings(raw))
+}
+const patches = [
+  {},
+  { soundEnabled: false, showBody: false, showPreview: false, muteSoundWhenDnd: false },
+  { soundEnabled: "yes", showBody: 0, showPreview: null, muteSoundWhenDnd: 1 },
+  { displayLimit: 3, keepDays: 9999, trashDays: 0, maxItems: 20000, autoHideMs: -5 },
+  { displayLimit: "120", keepDays: "abc", autoHideMs: 8000 },
+  { badge: "Count", clickAction: "Nothing" },
+  { badge: "Huge", clickAction: 7 },
+  { defaultSound: "warning", soundLow: "nope", soundNormal: "bell", soundCritical: "dialog-warning" },
+  { appSounds: { Slack: "bell", "../x": "bell", Mail: "nope", " bad": "bell" } }
+]
+patches.forEach((p, i) => eq("settings-set == JS mergeSettings #" + i + " " + JSON.stringify(p), backendSet(p), jsSet(p)))
+patches.forEach((p, i) => { const b = backendSet(p); eq("JS mergeSettings keeps backend output #" + i, plain(M.mergeSettings(b)), b) })
+fs.rmSync(settingsFile, { force: true })
+backend("settings-set", '{"soundEnabled":false,"showBody":false}')
+const after = JSON.parse(backend("settings-set", '{"badge":"Count"}'))
+eq("booleans can be switched off and stay off", [after.soundEnabled, after.showBody, after.badge], [false, false, "Count"])
+eq("...and back on", JSON.parse(backend("settings-set", '{"soundEnabled":true}')).soundEnabled, true)
+const manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"))
+eq("manifest has no second copy of the settings", [manifest.barWidget.schema, manifest.barWidget.defaults], [undefined, undefined])
+const panel = fs.readFileSync(path.join(dir, "Panel.qml"), "utf8")
+eq("Panel reads no Omarchy widget settings", [/\bsetting\(/.test(panel), /pushSchemaSettings/.test(panel)], [false, false])
+
 console.log(`\npassed ${pass}, failed ${fail}`)
 process.exit(fail ? 1 : 0)

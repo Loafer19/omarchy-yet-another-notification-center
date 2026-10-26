@@ -28,6 +28,21 @@ Click the bell to open the panel. Right-click toggles Do Not Disturb. Escape clo
 omarchy bar move yoyo.notification-center --section right
 ```
 
+## Settings
+
+Change settings in the panel's **Settings** tab. They are stored in one place:
+
+```
+~/.local/state/omarchy/yoyo.notification-center/settings.json
+```
+
+Everything reads and writes that file through the plugin's backend
+(`scripts/backend.sh settings-get` / `settings-set`), which fills in defaults
+and clamps values using `defaults.js` (shared with the QML). The widget has no
+settings in Omarchy's own widget-settings dialog — values there would be a
+second copy. You may edit `settings.json` by hand; invalid or out-of-range
+values fall back to the defaults in `defaults.js`.
+
 ## Remove
 
 ```sh

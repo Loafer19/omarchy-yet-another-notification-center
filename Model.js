@@ -72,7 +72,7 @@ function mergeSettings(raw) {
     } else if (ENUMS[key]) {
       out[key] = pickEnum(key, raw[key], DEFAULTS[key])
     } else if (key === "soundEnabled" || key === "muteSoundWhenDnd" || key === "showBody" || key === "showPreview") {
-      out[key] = raw[key] === true
+      out[key] = typeof raw[key] === "boolean" ? raw[key] : DEFAULTS[key]
     } else {
       out[key] = raw[key]
     }

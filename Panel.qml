@@ -57,7 +57,9 @@ Panel {
   ]
 
   readonly property var cfg: store && store.cfg ? store.cfg : Model.DEFAULTS
-  readonly property string badge: String(setting("badge", cfg.badge || "Dot"))
+  // Settings live in the store only (settings.json via backend settings-get/
+  // set); see README "Settings". Omarchy's per-widget settings are not read.
+  readonly property string badge: String(cfg.badge || "Dot")
   readonly property var emptyList: []
   readonly property var entries: store ? store.entries : emptyList
   readonly property var trashEntries: store ? store.trashEntries : emptyList
@@ -106,10 +108,7 @@ Panel {
   }
 
   function bindStore() {
-    if (store) {
-      pushSchemaSettings()
-      return
-    }
+    if (store) return
     var host = bar && bar.shell ? bar.shell : null
     if (!host || typeof host.serviceFor !== "function") return
     var s = host.serviceFor("yoyo.notification-center")
@@ -117,20 +116,7 @@ Panel {
     store = s
   }
 
-  function pushSchemaSettings() {
-    if (!store) return
-    var keys = ["badge", "keepDays", "displayLimit", "autoHideMs", "soundEnabled"]
-    for (var i = 0; i < keys.length; i++) {
-      var k = keys[i]
-      var v = settings ? settings[k] : undefined
-      if (v === undefined || v === null) continue
-      if (store.cfg && store.cfg[k] === v) continue
-      store.setSetting(k, v)
-    }
-  }
-
   onBarChanged: bindStore()
-  onSettingsChanged: pushSchemaSettings()
 
   Timer {
     interval: 200

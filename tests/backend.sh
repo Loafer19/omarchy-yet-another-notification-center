@@ -54,7 +54,11 @@ expect "settings-set persisted" "$(jq -c .displayLimit "$store/settings.json")" 
 out=$(B settings-set 'not json' 2>/dev/null); rc=$?
 expect "settings-set invalid JSON -> exit 1" "$rc" 1
 expect "settings-set invalid JSON -> ok:false" "$(jq -c . <<< "$out")" '{"ok":false,"error":"invalid JSON"}'
-B settings-set '{"displayLimit":50,"keepDays":30}' >/dev/null
+expect "settings-set non-object refused" "$(B settings-set '[1]' 2>/dev/null)" '{"ok":false,"error":"settings patch must be a JSON object"}'
+B settings-set '{"soundEnabled":false,"showPreview":false}' >/dev/null
+expect "settings-set can turn booleans off (and keep them off)" \
+  "$(B settings-set '{"badge":"Count"}' | jq -c '[.soundEnabled,.showPreview,.showBody,.badge]')" '[false,false,true,"Count"]'
+B settings-set '{"displayLimit":50,"keepDays":30,"soundEnabled":true,"showPreview":true,"badge":"Dot"}' >/dev/null
 expect "store files are private" "$(stat -c %a "$store" "$store/settings.json" | paste -sd' ')" "700 600"
 
 echo "== ingest"

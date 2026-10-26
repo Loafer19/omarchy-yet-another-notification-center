@@ -546,6 +546,7 @@ cmd_settings_set() {
   [[ -n $patch ]] || die "settings-set needs JSON"
   (( ${#patch} <= 32768 )) || die "settings patch too large"
   printf '%s' "$patch" | jq -e . >/dev/null 2>&1 || die "invalid JSON"
+  printf '%s' "$patch" | jq -e 'type == "object"' >/dev/null 2>&1 || die "settings patch must be a JSON object"
   with_lock merge_settings "$patch" || die "cannot save settings"
   cmd_settings_get
 }
@@ -558,8 +559,6 @@ merge_settings() {
       ((v | tonumber? // fb) | if . < lo then lo elif . > hi then hi else . end);
     def clamp_named(name; v):
       S.limits[name] as $l | clamp(v; $l.min; $l.max; $l.fallback);
-    def as_bool(v; fb):
-      if v == true then true elif v == false then false else fb end;
     def sound:
       (S.soundAliases[.] // .) as $id
       | if (S.sounds | map(.id) | index($id)) != null then $id else S.defaults.defaultSound end;
@@ -573,23 +572,27 @@ merge_settings() {
       | map({key: .key[0:64], value: (.value | tostring | sound)})
       | from_entries;
     (S.defaults + .) as $cur
-    | {
-        displayLimit: clamp_named("displayLimit"; $patch.displayLimit // $cur.displayLimit),
-        keepDays: clamp_named("keepDays"; $patch.keepDays // $cur.keepDays),
-        maxItems: clamp_named("maxItems"; $patch.maxItems // $cur.maxItems),
-        trashDays: clamp_named("trashDays"; $patch.trashDays // $cur.trashDays),
-        autoHideMs: clamp_named("autoHideMs"; $patch.autoHideMs // $cur.autoHideMs),
-        soundEnabled: as_bool($patch.soundEnabled // $cur.soundEnabled; true),
-        defaultSound: (($patch.defaultSound // $cur.defaultSound) | tostring | sound),
-        soundLow: (($patch.soundLow // $cur.soundLow) | tostring | sound),
-        soundNormal: (($patch.soundNormal // $cur.soundNormal) | tostring | sound),
-        soundCritical: (($patch.soundCritical // $cur.soundCritical) | tostring | sound),
-        muteSoundWhenDnd: as_bool($patch.muteSoundWhenDnd // $cur.muteSoundWhenDnd; true),
-        appSounds: sounds($patch.appSounds // $cur.appSounds),
-        badge: (($patch.badge // $cur.badge) | tostring | pick_enum("badge")),
-        clickAction: (($patch.clickAction // $cur.clickAction) | tostring | pick_enum("clickAction")),
-        showBody: as_bool($patch.showBody // $cur.showBody; true),
-        showPreview: as_bool($patch.showPreview // $cur.showPreview; true)
+    # A key in the patch wins unless it is null; `//` would also skip false.
+    | def val(k): if $patch[k] != null then $patch[k] else $cur[k] end;
+      def as_bool(k):
+        val(k) as $v | if $v == true or $v == false then $v else S.defaults[k] end;
+      {
+        displayLimit: clamp_named("displayLimit"; val("displayLimit")),
+        keepDays: clamp_named("keepDays"; val("keepDays")),
+        maxItems: clamp_named("maxItems"; val("maxItems")),
+        trashDays: clamp_named("trashDays"; val("trashDays")),
+        autoHideMs: clamp_named("autoHideMs"; val("autoHideMs")),
+        soundEnabled: as_bool("soundEnabled"),
+        defaultSound: (val("defaultSound") | tostring | sound),
+        soundLow: (val("soundLow") | tostring | sound),
+        soundNormal: (val("soundNormal") | tostring | sound),
+        soundCritical: (val("soundCritical") | tostring | sound),
+        muteSoundWhenDnd: as_bool("muteSoundWhenDnd"),
+        appSounds: sounds(val("appSounds")),
+        badge: (val("badge") | tostring | pick_enum("badge")),
+        clickAction: (val("clickAction") | tostring | pick_enum("clickAction")),
+        showBody: as_bool("showBody"),
+        showPreview: as_bool("showPreview")
       }
   ' "$settings_file" > "$settings_file.tmp" 2>/dev/null && mv -f "$settings_file.tmp" "$settings_file" && return 0
   rm -f "$settings_file.tmp"
