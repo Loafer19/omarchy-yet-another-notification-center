@@ -4,13 +4,20 @@ Omarchy bar widget: notification history, trash, sounds, and auto-hide.
 
 ![History tab](preview.png)
 
-Uses Omarchy's `omarchy.notifications` service — leave it enabled. Disable any other notification-center widget first, or you get two bells.
+- **History**: search (`/`), urgency chips, DND, auto-hide, dismiss to trash
+- **Trash**: restore or empty; kept for the days set in Settings
+- **Settings**: General, Sound (Play per clip), Apps
 
-- **History** — search (`/`), urgency chips, DND, auto-hide, dismiss to trash
-- **Trash** — restore or empty; keep days from Settings
-- **Settings** — General, Sound (Play per clip), Apps
+| Trash | Settings |
+| --- | --- |
+| ![Trash tab](docs/trash.png) | ![Settings tab](docs/settings.png) |
 
-**Tab** cycles tabs · **h/l** chips · **j/k** rows · **Enter** acts · **x** trashes · **Esc** closes
+Uses Omarchy's `omarchy.notifications` service, so leave it enabled. Disable
+any other notification-center widget first, or you get two bells.
+
+Contents: [Requirements](#requirements) · [Omarchy versions](#omarchy-versions) ·
+[Install](#install) · [Usage](#usage) · [Settings](#settings) ·
+[Development](#development) · [Changelog](#changelog) · [Remove](#remove)
 
 ## Requirements
 
@@ -68,9 +75,19 @@ omarchy plugin add https://github.com/Loafer19/omarchy-yet-another-notification-
 
 ## Usage
 
-Click the bell to open the panel. Right-click toggles Do Not Disturb. Escape closes.
+Click the bell to open the panel; right-click it to toggle Do Not Disturb.
 
-## Configure
+| Key | Does |
+| --- | --- |
+| **Tab** | next tab |
+| **h** / **l** | previous / next chip (on a Settings row: change its value) |
+| **j** / **k** | next / previous row |
+| **Enter** | open the row, restore it (Trash) or change the setting |
+| **x** | move to Trash (History) or delete for good (Trash) |
+| **/** | search History |
+| **Esc** | end the search, cancel Empty trash, or close |
+
+Move the bell to another bar section:
 
 ```sh
 omarchy bar move yoyo.notification-center --section right
@@ -104,6 +121,42 @@ offscreen) against a fake toast stack and times auto-hide;
 `tests/omapager.sh` does the same against a fake Omarchy 4.5 engine, and
 `tests/capture.sh` sends real notifications (pictures, actions, a secret,
 DND) to a 4.5-like server on a private D-Bus. Also needs `node`.
+
+Layout:
+
+- `Service.qml`: the store the bar and panel share (entries, DND,
+  settings, engine); its parts live in `service/` (actions, auto-hide, live
+  toasts, settings, watcher).
+- `BarWidget.qml`, `Panel.qml`: the bell and the panel; panel parts in
+  `components/`.
+- `Model.js` (rows, settings, links), `Nav.js` (keyboard cursor),
+  `defaults.js`: pure logic, tested by `tests/model.test.js`.
+- `scripts/backend.sh`: the store on disk; one module per job in
+  `scripts/lib/` (store, legacy and omapager ingest, images, watch,
+  settings, sound), jq programs in `scripts/lib/*.jq`.
+- `vendor/yoyo-ui`: the shared [omarchy-yoyo-ui](https://github.com/Loafer19/omarchy-yoyo-ui)
+  kit. Don't edit it here; `tools/sync-ui.sh` updates it and
+  `tools/sync-ui.sh --check` (part of `tests/run.sh`) checks it.
+
+Lint (both clean): `qmllint` on the plugin's own `.qml` files, and
+`shellcheck -x scripts/backend.sh`.
+
+## Changelog
+
+Full notes on the [Releases](https://github.com/Loafer19/omarchy-yet-another-notification-center/releases) page.
+
+- **Unreleased**: code split into `service/`, `components/` and
+  `scripts/lib/`, with no behaviour change; more tests (cursor, setting
+  changes, backend error paths); qmllint and shellcheck clean. Visual: the
+  History and Trash header lines sit flush with the tabs and cards, and
+  empty lists say what to do next.
+- **1.5.0**: Omarchy 4.5 (Omapager) support: history from the engine,
+  pictures saved while a toast is up, links, the sender's default action.
+- **1.4.0**: per-toast auto-hide; settings live only in the panel; every
+  action is checked and failures show in a footer; faster pruning.
+- **1.3.1**: omarchy-yoyo-ui v0.2.0; Empty trash confirms with a second click.
+- **1.3.0**: shared omarchy-yoyo-ui v0.1.0; theme colours fixed.
+- **1.2.6**: DND without flicker; Keep in History moves old cards to Trash.
 
 ## Remove
 
