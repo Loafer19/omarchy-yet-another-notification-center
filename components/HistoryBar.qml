@@ -11,6 +11,7 @@ Item {
   property bool searching: false      // a search filter is applied
   property bool dnd: false
   property bool autoHide: false
+  // Flush with the tabs, chips and cards by default.
   property int edgeMargin: 0
 
   signal dndClicked()

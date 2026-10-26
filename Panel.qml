@@ -359,7 +359,6 @@ Panel {
           searching: root.filter !== ""
           dnd: root.dnd
           autoHide: root.autoHideOn
-          edgeMargin: root.edgeMargin
           onDndClicked: root.toggleDnd()
           onAutoHideClicked: root.toggleAutoHide()
           onClearClicked: if (root.store) root.store.clearAll()
@@ -380,7 +379,6 @@ Panel {
           visible: root.activeTab === "trash"
           count: root.trashView.length
           days: Number(root.cfg.trashDays || 30)
-          edgeMargin: root.edgeMargin
           onEmptyTrash: if (root.store) root.store.emptyTrash()
         }
 

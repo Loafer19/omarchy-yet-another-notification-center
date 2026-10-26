@@ -12,6 +12,7 @@ Item {
 
   property int count: 0
   property real days: 30
+  // Flush with the tabs, chips and cards by default.
   property int edgeMargin: 0
   readonly property alias armed: emptyChip.armed
 
