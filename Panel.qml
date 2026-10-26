@@ -2,10 +2,10 @@ import qs.Commons as Commons
 import QtQuick
 import QtQuick.Controls
 import Quickshell
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "Nav.js" as Nav
 import "components" as Yanc
 import "vendor/yoyo-ui"
 
@@ -77,21 +77,19 @@ Panel {
     if (store && store.toggleDnd) store.toggleDnd()
   }
 
-  // Empty trash is permanent — arm on first click, commit on second.
-  // Auto-disarms (4 s) so a stray click later cannot wipe the bin. The
-  // two-step logic lives in the chip (HeaderChip confirm mode).
-  readonly property bool emptyTrashArmed: emptyTrashChip.armed
+  // Empty trash is permanent: the Trash bar's chip arms on the first click
+  // and commits on the second (see components/TrashBar.qml).
+  readonly property bool emptyTrashArmed: trashBar.armed
 
-  function disarmEmptyTrash() { emptyTrashChip.disarm() }
+  function disarmEmptyTrash() { trashBar.disarm() }
 
   function requestEmptyTrash() {
     if (!store || trashView.length === 0) {
       disarmEmptyTrash()
       return
     }
-    emptyTrashChip.activate()
+    trashBar.activate()
   }
-
 
   onTrashViewChanged: if (trashView.length === 0) disarmEmptyTrash()
 
@@ -128,7 +126,7 @@ Panel {
   Connections {
     target: root.store
     function onEntryAdded(entry) {
-      if (root.opened && store) store.markSeen()
+      if (root.opened && root.store) root.store.markSeen()
     }
     // Failed store/helper calls show in the footer (it only takes space while
     // a message is up) and are already logged by the service.
@@ -174,140 +172,61 @@ Panel {
     }
   }
 
-  function chipIndexByKey(chips, key) {
-    for (var i = 0; i < chips.length; i++) {
-      if (String(chips[i].key) === String(key)) return i
-    }
-    return 0
+  // --- keyboard cursor (Nav.js) ----------------------------------------------
+  function navContext() {
+    return { tabs: root.tabs, activeTab: root.activeTab, chips: root.activeFilterChips,
+             filterKey: root.activeFilterKey, count: root.activeListCount }
   }
 
-  function clampIndex(i, len) {
-    if (len <= 0) return 0
-    if (i < 0) return 0
-    if (i >= len) return len - 1
-    return i
+  function rowCursor(tab) {
+    return root.cursorActive && root.focusSection === "rows" && root.activeTab === tab ? root.selectedIndex : -1
   }
 
+  // The first key press only shows the cursor (false); later ones move it.
   function ensureCursor() {
-    if (!root.cursorActive) {
-      root.cursorActive = true
-      if (root.activeListCount > 0) {
-        root.focusSection = "rows"
-        root.selectedIndex = 0
-      } else if (root.activeFilterChips.length > 0) {
-        root.focusSection = "filters"
-        root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.filterKeyForTab())
-      } else {
-        root.focusSection = "tabs"
-        root.selectedIndex = root.chipIndexByKey(root.tabs, root.activeTab)
-      }
-      return false
-    }
-    return true
+    if (root.cursorActive) return true
+    root.cursorActive = true
+    var at = Nav.start(root.navContext())
+    root.focusSection = at.section
+    root.selectedIndex = at.index
+    return false
   }
 
-  function setRowCursor(index) {
+  function setCursor(section, index) {
     root.cursorActive = true
-    root.focusSection = "rows"
+    root.focusSection = section
     root.selectedIndex = index
   }
-  function setTabsCursor(index) {
-    root.cursorActive = true
-    root.focusSection = "tabs"
-    root.selectedIndex = index
-  }
-  function setFiltersCursor(index) {
-    root.cursorActive = true
-    root.focusSection = "filters"
-    root.selectedIndex = index
-  }
+  function setRowCursor(index) { root.setCursor("rows", index) }
+  function setTabsCursor(index) { root.setCursor("tabs", index) }
+  function setFiltersCursor(index) { root.setCursor("filters", index) }
 
   function cycleTab(direction) {
-    var n = root.tabs.length
-    var i = root.chipIndexByKey(root.tabs, root.activeTab)
-    i = (i + direction) % n
-    if (i < 0) i += n
-    root.activeTab = root.tabs[i].key
-    root.setTabsCursor(i)
+    var to = Nav.cycleTab(root.navContext(), direction)
+    root.activeTab = to.tab
+    root.setTabsCursor(to.index)
   }
 
   function moveCursor(dx, dy) {
     if (!root.ensureCursor()) return
-    if (dy !== 0) {
-      if (root.focusSection === "tabs") {
-        if (dy > 0) {
-          if (root.activeFilterChips.length > 0) {
-            root.focusSection = "filters"
-            root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.filterKeyForTab())
-          } else if (root.activeListCount > 0) {
-            root.focusSection = "rows"
-            root.selectedIndex = 0
-          }
-        }
-        return
-      }
-      if (root.focusSection === "filters") {
-        if (dy > 0 && root.activeListCount > 0) {
-          root.focusSection = "rows"
-          root.selectedIndex = 0
-        } else if (dy < 0) {
-          root.focusSection = "tabs"
-          root.selectedIndex = root.chipIndexByKey(root.tabs, root.activeTab)
-        }
-        return
-      }
-      if (dy > 0) root.selectedIndex = root.clampIndex(root.selectedIndex + 1, root.activeListCount)
-      else if (root.selectedIndex > 0) root.selectedIndex = root.selectedIndex - 1
-      else if (root.activeFilterChips.length > 0) {
-        root.focusSection = "filters"
-        root.selectedIndex = root.chipIndexByKey(root.activeFilterChips, root.filterKeyForTab())
-      } else {
-        root.focusSection = "tabs"
-        root.selectedIndex = root.chipIndexByKey(root.tabs, root.activeTab)
-      }
-      return
-    }
-    if (dx === 0) return
-    if (root.focusSection === "tabs") {
-      root.selectedIndex = root.clampIndex(root.selectedIndex + dx, root.tabs.length)
-      root.activeTab = root.tabs[root.selectedIndex].key
-      return
-    }
-    if (root.focusSection === "filters" && root.activeFilterChips.length > 0) {
-      root.selectedIndex = root.clampIndex(root.selectedIndex + dx, root.activeFilterChips.length)
-      root.applyFilterKey(root.activeFilterChips[root.selectedIndex].key)
-      return
-    }
-    if (root.focusSection === "rows" && root.activeTab === "settings")
-      root.nudgeSetting(dx)
+    var to = Nav.move({ section: root.focusSection, index: root.selectedIndex }, dx, dy, root.navContext())
+    root.focusSection = to.section
+    root.selectedIndex = to.index
+    if (to.tab !== undefined) root.activeTab = to.tab
+    if (to.filter !== undefined) root.applyFilterKey(to.filter)
+    if (to.nudge) root.nudgeSetting(to.nudge)
   }
 
   function nudgeSetting(delta) {
-    if (selectedIndex < 0 || selectedIndex >= settingsView.length) return
-    var row = settingsView[selectedIndex]
-    if (!row || !store) return
-    if (row.kind === "toggle") {
-      store.setSetting(row.key, !(cfg[row.key]))
+    if (selectedIndex < 0 || selectedIndex >= settingsView.length || !store) return
+    var change = Model.settingNudge(settingsView[selectedIndex], cfg, delta)
+    if (!change) return
+    if (change.app !== undefined) {
+      store.setAppSound(change.app, change.value)
       return
     }
-    if (row.kind === "step") {
-      var min = Number(row.min || 1)
-      var max = Number(row.max || 100)
-      var step = Number(row.step || 1)
-      var next = Model.clampInt(Number(cfg[row.key] || min) + delta * step, min, max, min)
-      store.setSetting(row.key, next)
-      return
-    }
-    if (row.kind === "enum" && Model.enumList(row.key).length)
-      store.setSetting(row.key, Model.cycle(Model.enumList(row.key), cfg[row.key], delta))
-    else if (row.kind === "enum" && (row.key === "defaultSound" || row.key === "soundLow" || row.key === "soundNormal" || row.key === "soundCritical")) {
-      var soundNext = Model.cycle(Model.SOUND_IDS, cfg[row.key], delta)
-      store.setSetting(row.key, soundNext)
-      store.playSound(soundNext)
-    } else if (row.kind === "appSound") {
-      var cur = (cfg.appSounds && cfg.appSounds[row.app]) ? cfg.appSounds[row.app] : "inherit"
-      store.setAppSound(row.app, Model.cycle(["inherit"].concat(Model.SOUND_IDS), cur, delta))
-    }
+    store.setSetting(change.key, change.value)
+    if (change.play) store.playSound(change.value)
   }
 
   function activateCursor() {
@@ -321,7 +240,7 @@ Panel {
       return
     }
     if (root.activeTab === "history" && selectedIndex >= 0 && selectedIndex < historyView.length)
-      root.activateAt(historyList, selectedIndex, historyView[selectedIndex])
+      opener.activateAt(historyList, selectedIndex, historyView[selectedIndex])
     else if (root.activeTab === "trash" && selectedIndex >= 0 && selectedIndex < trashView.length)
       root.restoreRow(trashView[selectedIndex])
     else if (root.activeTab === "settings")
@@ -335,116 +254,12 @@ Panel {
       root.purgeRow(trashView[selectedIndex])
   }
 
-  property var pendingFocus: null
-
-  Process {
-    id: focusProc
-    onExited: function(exitCode) {
-      var pending = root.pendingFocus
-      root.pendingFocus = null
-      if (exitCode === 0) {
-        root.close()
-        return
-      }
-      if (!pending) return
-      if (root.openLink(pending.list, pending.index, pending.row)) return
-      var wrap = pending.list && pending.list.itemAtIndex ? pending.list.itemAtIndex(pending.index) : null
-      if (wrap && wrap.showNotice)
-        wrap.showNotice("No window", root.noticeIdentity(pending.row))
-    }
-  }
-
-  function noticeIdentity(row) { return Model.noticeIdentity(row) }
-
-  function flashNotice(list, index, title, detail) {
-    var wrap = list && list.itemAtIndex ? list.itemAtIndex(index) : null
-    if (wrap && wrap.showNotice) wrap.showNotice(title, detail)
-  }
-
-  function activateAt(list, index, row) {
-    if (!row) {
-      root.flashNotice(list, index, "Can't open", "")
-      return
-    }
-    var who = root.noticeIdentity(row)
-    var action = String(cfg.clickAction || "Auto")
-    if (action === "Nothing") {
-      root.flashNotice(list, index, "Clicks are off", who)
-      return
-    }
-    if (action === "Auto" && Model.isStoreImage(row.preview || row.file)) {
-      var openPath = Model.storeImageUrl(row.preview || row.file).replace(/^file:\/\//, "")
-      if (!openPath || openPath.charAt(0) !== "/" || openPath.indexOf("..") >= 0) {
-        root.flashNotice(list, index, "Can't open", who)
-        return
-      }
-      root.openPicture(list, index, who, openPath)
-      return
-    }
-    // Omarchy 4.5, toast still up: what clicking the toast does for the
-    // sender (its "default" D-Bus action), which closes it like a click would.
-    if (action === "Auto" && store && typeof store.invokeLive === "function" && store.invokeLive(row.key, "default")) {
-      root.close()
-      return
-    }
-    if (!root.omarchyPath) {
-      if (!root.openLink(list, index, row)) root.flashNotice(list, index, "Can't open", who)
-      return
-    }
-    if (!Model.isSafeAppName(row.app)) {
-      if (root.openLink(list, index, row)) return
-      root.flashNotice(list, index, String(row.app || "").length ? "Can't open" : "No app to open", who)
-      return
-    }
-    root.pendingFocus = { list: list, index: index, row: row }
-    focusProc.running = false
-    focusProc.command = [root.omarchyPath + "/bin/omarchy-hyprland-focus-app", row.app]
-    focusProc.running = true
-  }
-
-  // xdg-open may stay up as long as the viewer does: close the panel once it
-  // has run for a moment or exited cleanly; a quick non-zero exit keeps the
-  // panel open and says so on the row.
-  property var pendingOpen: null
-  Timer {
-    id: openSettle
-    interval: 700
-    onTriggered: if (root.pendingOpen) { root.pendingOpen.settled = true; root.close() }
-  }
-
-  // The row's web address (Omarchy 4.5: from its text or the site a browser
-  // notification came from), when the app can't be focused. Auto only.
-  function openLink(list, index, row) {
-    if (String(cfg.clickAction || "Auto") !== "Auto") return false
-    var url = Model.safeLink(row ? row.link : "")
-    if (!url) return false
-    root.openPicture(list, index, root.noticeIdentity(row), url)
-    return true
-  }
-
-  function openPicture(list, index, who, path) {
-    if (!store) return
-    var token = { settled: false }
-    root.pendingOpen = token
-    openSettle.restart()
-    store.run("open", ["xdg-open", path], function(res) {
-      if (root.pendingOpen === token) { root.pendingOpen = null; openSettle.stop() }
-      if (res.ok) {
-        if (!token.settled) root.close()
-        return
-      }
-      if (!token.settled) root.flashNotice(list, index, "Can't open", who)
-    })
-  }
-
-  function copyRow(list, index, row) {
-    if (!row || !store) return
-    var text = Model.copyTextFor(row)
-    if (!text) return
-    store.run("copy", ["wl-copy", "--", text], function(res) {
-      var wrap = list && list.itemAtIndex ? list.itemAtIndex(index) : null
-      if (wrap && wrap.copyFinished) wrap.copyFinished(res.ok, res.error)
-    })
+  Yanc.RowOpener {
+    id: opener
+    store: root.store
+    cfg: root.cfg
+    omarchyPath: root.omarchyPath
+    onCloseRequested: root.close()
   }
 
   function dismissRow(row) { if (store && row) store.dismiss(row.key) }
@@ -528,66 +343,24 @@ Panel {
           cursorIndex: root.cursorActive && root.focusSection === "tabs" ? root.selectedIndex : -1
           onSelected: function(key) {
             root.activeTab = key
-            root.setTabsCursor(root.chipIndexByKey(root.tabs, key))
+            root.setTabsCursor(Nav.indexOfKey(root.tabs, key))
           }
           onChipHovered: function(index) { root.setTabsCursor(index) }
         }
 
         Rectangle { width: parent.width; height: Style.spacing.hairline; color: Theme.line }
 
-        Item {
+        Yanc.HistoryBar {
           width: parent.width
-          height: Style.space(28)
           visible: root.activeTab === "history"
-
-          Row {
-            anchors.left: parent.left
-            anchors.leftMargin: root.edgeMargin
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(8)
-
-            Text {
-              text: root.filter !== "" ? historyView.length + " matching" : (historyView.length + " in History")
-              color: Theme.dim
-              font.family: Theme.fontFamily
-              font.pixelSize: Style.font.caption
-              anchors.verticalCenter: parent.verticalCenter
-            }
-          }
-
-          Row {
-            anchors.right: parent.right
-            anchors.rightMargin: root.edgeMargin
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(6)
-
-            HeaderChip {
-              text: "DND"
-              on: root.dnd
-              tooltipText: root.dnd ? "Allow notifications" : "Silence notifications"
-              onClicked: root.toggleDnd()
-            }
-
-            HeaderChip {
-              text: "Auto-hide"
-              on: root.autoHideOn
-              tooltipText: root.autoHideOn
-                ? "Toasts stay up — Omarchy never expires critical on its own"
-                : "Hide each toast 8 s after it appears, including critical"
-              onClicked: root.toggleAutoHide()
-            }
-
-            HeaderChip {
-              // Stay visible when empty — disabled instead of vanishing so the
-              // header layout does not jump and the action stays discoverable.
-              text: "Clear"
-              enabled: historyView.length > 0
-              tooltipText: historyView.length > 0
-                ? "Move everything in History to Trash"
-                : "History is already empty"
-              onClicked: if (root.store) root.store.clearAll()
-            }
-          }
+          count: root.historyView.length
+          searching: root.filter !== ""
+          dnd: root.dnd
+          autoHide: root.autoHideOn
+          edgeMargin: root.edgeMargin
+          onDndClicked: root.toggleDnd()
+          onAutoHideClicked: root.toggleAutoHide()
+          onClearClicked: if (root.store) root.store.clearAll()
         }
 
         TextField {
@@ -599,43 +372,14 @@ Panel {
           Keys.onEscapePressed: root.endSearch()
         }
 
-        Item {
+        Yanc.TrashBar {
+          id: trashBar
           width: parent.width
-          height: Style.space(28)
           visible: root.activeTab === "trash"
-
-          Text {
-            anchors.left: parent.left
-            anchors.leftMargin: root.edgeMargin
-            anchors.verticalCenter: parent.verticalCenter
-            text: {
-              var days = Number(root.cfg.trashDays || 30)
-              var kept = days === 1 ? "1 day" : days + " days"
-              return trashView.length === 0 ? "Empty · kept " + kept : trashView.length + " in trash · " + kept
-            }
-            color: Theme.dim
-            font.family: Theme.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
-          HeaderChip {
-            id: emptyTrashChip
-            anchors.right: parent.right
-            anchors.rightMargin: root.edgeMargin
-            anchors.verticalCenter: parent.verticalCenter
-            text: "Empty trash"
-            confirm: true
-            confirmText: "Confirm?"
-            armMs: 4000
-            danger: true
-            enabled: trashView.length > 0
-            tooltipText: trashView.length === 0
-              ? "Trash is already empty"
-              : (emptyTrashChip.armed
-                ? "Click again to delete forever — Esc or wait to cancel"
-                : "Delete trash forever (asks for confirmation)")
-            onTriggered: if (root.store) root.store.emptyTrash()
-          }
+          count: root.trashView.length
+          days: Number(root.cfg.trashDays || 30)
+          edgeMargin: root.edgeMargin
+          onEmptyTrash: if (root.store) root.store.emptyTrash()
         }
 
         ChipRow {
@@ -647,7 +391,7 @@ Panel {
           cursorIndex: root.cursorActive && root.focusSection === "filters" ? root.selectedIndex : -1
           onSelected: function(key) {
             root.applyFilterKey(key)
-            root.setFiltersCursor(root.chipIndexByKey(root.activeFilterChips, key))
+            root.setFiltersCursor(Nav.indexOfKey(root.activeFilterChips, key))
           }
           onChipHovered: function(index) { root.setFiltersCursor(index) }
         }
@@ -661,174 +405,89 @@ Panel {
         anchors.right: parent.right
         anchors.bottom: statusFooter.top
 
-        ListView {
+        Yanc.RowList {
           id: historyList
           anchors.fill: parent
           visible: root.activeTab === "history"
-          clip: true
-          spacing: Style.space(6)
-          model: historyView
-          delegate: Item {
-            id: historyWrap
-            required property int index
-            required property var modelData
-            width: ListView.view.width
-            height: historyCard.implicitHeight
-            function showNotice(title, detail) { historyCard.showNotice(title, detail) }
-            function copyFinished(ok, error) { historyCard.copyFinished(ok, error) }
-
-            Yanc.NotificationRow {
-              id: historyCard
-              width: parent.width
-              app: historyWrap.modelData.app
-              appIcon: historyWrap.modelData.appIcon
-              summary: historyWrap.modelData.summary
-              body: historyWrap.modelData.body
-              image: historyWrap.modelData.image
-              preview: historyWrap.modelData.preview
-              glyph: historyWrap.modelData.glyph
-              time: Model.formatTime(historyWrap.modelData.timestamp, root.now)
-              urgency: historyWrap.modelData.urgency
-              unread: historyWrap.modelData.timestamp > root.readMark
-              showBody: !!root.cfg.showBody
-              showPreview: !!root.cfg.showPreview
-              actionLabel: "Trash"
-              danger: true
-              edgeMargin: root.edgeMargin
-              hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "history" && root.selectedIndex === historyWrap.index
-              onRowHovered: root.setRowCursor(historyWrap.index)
-              onRowClicked: root.activateAt(historyList, historyWrap.index, historyWrap.modelData)
-              onCopyClicked: root.copyRow(historyList, historyWrap.index, historyWrap.modelData)
-              onActionClicked: root.dismissRow(historyWrap.modelData)
-            }
-          }
+          model: root.historyView
+          now: root.now
+          readMark: root.readMark
+          markUnread: true
+          showBody: !!root.cfg.showBody
+          showPreview: !!root.cfg.showPreview
+          actionLabel: "Trash"
+          danger: true
+          edgeMargin: root.edgeMargin
+          cursorIndex: root.rowCursor("history")
+          onRowHovered: function(index) { root.setRowCursor(index) }
+          onRowClicked: function(index, row) { opener.activateAt(historyList, index, row) }
+          onCopyClicked: function(index, row) { opener.copyRow(historyList, index, row) }
+          onActionClicked: function(row) { root.dismissRow(row) }
         }
 
-        EmptyState {
-          anchors.centerIn: parent
-          width: parent.width
-          fitContent: true
-          topPadding: 0
-          bottomPadding: 0
-          visible: root.activeTab === "history" && historyView.length === 0
+        BodyEmpty {
+          visible: root.activeTab === "history" && root.historyView.length === 0
           title: !root.loaded ? "Reading the archive…"
             : (root.filter !== "" || root.historyFilter !== "all") ? "Nothing matches"
             : "Nothing has come in yet"
         }
 
-        ListView {
+        Yanc.RowList {
           id: trashList
           anchors.fill: parent
           visible: root.activeTab === "trash"
-          clip: true
-          spacing: Style.space(6)
-          model: trashView
-          delegate: Item {
-            id: trashWrap
-            required property int index
-            required property var modelData
-            width: ListView.view.width
-            height: trashCard.implicitHeight
-            function showNotice(title, detail) { trashCard.showNotice(title, detail) }
-            function copyFinished(ok, error) { trashCard.copyFinished(ok, error) }
-            Yanc.NotificationRow {
-              id: trashCard
-              width: parent.width
-              app: trashWrap.modelData.app
-              appIcon: trashWrap.modelData.appIcon
-              summary: trashWrap.modelData.summary
-              body: trashWrap.modelData.body
-              image: trashWrap.modelData.image
-              preview: trashWrap.modelData.preview
-              glyph: trashWrap.modelData.glyph
-              time: Model.formatTime(trashWrap.modelData.timestamp, root.now)
-              urgency: trashWrap.modelData.urgency
-              showBody: !!root.cfg.showBody
-              showPreview: !!root.cfg.showPreview
-              actionLabel: "Restore"
-              danger: false
-              edgeMargin: root.edgeMargin
-              hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "trash" && root.selectedIndex === trashWrap.index
-              onRowHovered: root.setRowCursor(trashWrap.index)
-              onRowClicked: root.restoreRow(trashWrap.modelData)
-              onCopyClicked: root.copyRow(trashList, trashWrap.index, trashWrap.modelData)
-              onActionClicked: root.restoreRow(trashWrap.modelData)
-            }
-          }
+          model: root.trashView
+          now: root.now
+          showBody: !!root.cfg.showBody
+          showPreview: !!root.cfg.showPreview
+          actionLabel: "Restore"
+          danger: false
+          edgeMargin: root.edgeMargin
+          cursorIndex: root.rowCursor("trash")
+          onRowHovered: function(index) { root.setRowCursor(index) }
+          onRowClicked: function(index, row) { root.restoreRow(row) }
+          onCopyClicked: function(index, row) { opener.copyRow(trashList, index, row) }
+          onActionClicked: function(row) { root.restoreRow(row) }
         }
 
-        EmptyState {
-          anchors.centerIn: parent
-          width: parent.width
-          fitContent: true
-          topPadding: 0
-          bottomPadding: 0
-          visible: root.activeTab === "trash" && trashView.length === 0
+        BodyEmpty {
+          visible: root.activeTab === "trash" && root.trashView.length === 0
           title: "Trash is empty"
         }
 
-        ListView {
-          id: settingsList
+        Yanc.SettingsList {
           anchors.fill: parent
           visible: root.activeTab === "settings"
-          clip: true
-          spacing: 0
-          model: settingsView
-          delegate: Item {
-            id: settingWrap
-            required property int index
-            required property var modelData
-            width: ListView.view.width
-            height: settingCard.height
-            Yanc.SettingRow {
-              id: settingCard
-              width: parent.width
-              title: settingWrap.modelData.title
-              subtitle: settingWrap.modelData.subtitle
-              kind: settingWrap.modelData.kind
-              checked: settingWrap.modelData.checked
-              currentValue: settingWrap.modelData.currentValue
-              optionSet: settingWrap.modelData.optionSet
-              numericValue: settingWrap.modelData.numericValue
-              numericMin: settingWrap.modelData.min
-              numericMax: settingWrap.modelData.max
-              numericStep: settingWrap.modelData.step
-              edgeMargin: root.edgeMargin
-              hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "settings" && root.selectedIndex === settingWrap.index
-              onRowHovered: root.setRowCursor(settingWrap.index)
-              onRowClicked: {
-                root.setRowCursor(settingWrap.index)
-                root.nudgeSetting(1)
-              }
-              onValuePicked: function(v) {
-                root.setRowCursor(settingWrap.index)
-                if (settingWrap.modelData.optionSet === "sound" || settingWrap.modelData.optionSet === "appSound") {
-                  if (root.store) root.store.playSound(v)
-                }
-                if (settingWrap.modelData.kind === "appSound") root.store.setAppSound(settingWrap.modelData.app, v)
-                else root.store.setSetting(settingWrap.modelData.key, v)
-              }
-              onPlayClicked: {
-                root.setRowCursor(settingWrap.index)
-                if (root.store) root.store.playSound(settingWrap.modelData.currentValue)
-              }
-              onNumberPicked: function(v) {
-                root.setRowCursor(settingWrap.index)
-                root.store.setSetting(settingWrap.modelData.key, v)
-              }
-              onPopupOpenChanged: function(open) { root.settingsPopupOpen = open }
-              onFieldFocusChanged: function(on) { root.settingsFieldFocus = on }
-            }
+          model: root.settingsView
+          edgeMargin: root.edgeMargin
+          cursorIndex: root.rowCursor("settings")
+          onRowHovered: function(index) { root.setRowCursor(index) }
+          onRowClicked: function(index) {
+            root.setRowCursor(index)
+            root.nudgeSetting(1)
           }
+          onValuePicked: function(index, row, v) {
+            root.setRowCursor(index)
+            if (row.optionSet === "sound" || row.optionSet === "appSound") {
+              if (root.store) root.store.playSound(v)
+            }
+            if (row.kind === "appSound") root.store.setAppSound(row.app, v)
+            else root.store.setSetting(row.key, v)
+          }
+          onPlayClicked: function(index, row) {
+            root.setRowCursor(index)
+            if (root.store) root.store.playSound(row.currentValue)
+          }
+          onNumberPicked: function(index, row, v) {
+            root.setRowCursor(index)
+            root.store.setSetting(row.key, v)
+          }
+          onPopupOpenChanged: function(open) { root.settingsPopupOpen = open }
+          onFieldFocusChanged: function(on) { root.settingsFieldFocus = on }
         }
 
-        EmptyState {
-          anchors.centerIn: parent
-          width: parent.width
-          fitContent: true
-          topPadding: 0
-          bottomPadding: 0
-          visible: root.activeTab === "settings" && root.settingsFilter === "apps" && settingsView.length === 0
+        BodyEmpty {
+          visible: root.activeTab === "settings" && root.settingsFilter === "apps" && root.settingsView.length === 0
           title: "No apps in the archive yet"
         }
       }
@@ -843,5 +502,14 @@ Panel {
         height: visible ? implicitHeight : 0
       }
     }
+  }
+
+  // The empty-list message, centred in the body.
+  component BodyEmpty: EmptyState {
+    anchors.centerIn: parent
+    width: parent.width
+    fitContent: true
+    topPadding: 0
+    bottomPadding: 0
   }
 }
