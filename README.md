@@ -12,6 +12,28 @@ Uses Omarchy's `omarchy.notifications` service — leave it enabled. Disable any
 
 **Tab** cycles tabs · **h/l** chips · **j/k** rows · **Enter** acts · **x** trashes · **Esc** closes
 
+## Requirements
+
+Omarchy with its notification service (`omarchy.notifications`) and
+`omarchy-shell`. Most of these ship with Omarchy; Arch package in brackets.
+
+Required:
+
+- `bash`, coreutils (`timeout`, `realpath`, `stat`, `date`, `head`), `awk`, `sed`, `grep`
+- `jq` [jq] — the store is JSON
+- `flock` [util-linux] — locks the store
+- `inotifywait` [inotify-tools] — follows new notifications (`watch` exits without it)
+
+Optional — the feature is skipped or shows an error without it:
+
+- `file` [file] — check notification icons/images before copying them
+- `magick` [imagemagick] — shrink large image previews
+- `pw-play` [pipewire-audio] + freedesktop sounds [sound-theme-freedesktop],
+  or `canberra-gtk-play` [libcanberra] — notification sounds
+- `wl-copy` [wl-clipboard] — Copy
+- `xdg-open` [xdg-utils] — open a notification's picture
+- `omarchy-hyprland-focus-app` (Omarchy) — click a row to focus the app
+
 ## Install
 
 ```sh
@@ -42,6 +64,16 @@ and clamps values using `defaults.js` (shared with the QML). The widget has no
 settings in Omarchy's own widget-settings dialog — values there would be a
 second copy. You may edit `settings.json` by hand; invalid or out-of-range
 values fall back to the defaults in `defaults.js`.
+
+## Development
+
+```sh
+tests/run.sh
+```
+
+Checks the vendored UI kit, runs the Model.js tests with Node and the
+backend tests against a temporary store (your notifications are never
+touched). Also needs `node`.
 
 ## Remove
 
