@@ -68,6 +68,10 @@ Panel {
   readonly property int unread: store ? store.unread : 0
   readonly property double lastSeen: store ? store.lastSeen : 0
   readonly property bool loaded: store ? store.loaded : false
+  readonly property string trashKeptText: {
+    var days = Number(cfg.trashDays || 30)
+    return "Trash keeps an entry " + (days === 1 ? "1 day" : days + " days")
+  }
   readonly property bool autoHideOn: Number(cfg.autoHideMs || 0) > 0
 
   // Bind the toggle to the plugin store only. Mixing first-party
@@ -430,6 +434,10 @@ Panel {
           title: !root.loaded ? "Reading the archive…"
             : (root.filter !== "" || root.historyFilter !== "all") ? "Nothing matches"
             : "Nothing has come in yet"
+          subtitle: !root.loaded ? ""
+            : root.filter !== "" ? "Try a shorter or different search"
+            : root.historyFilter !== "all" ? "Pick All to see every notification"
+            : "Notifications land here as they arrive"
         }
 
         Yanc.RowList {
@@ -453,6 +461,7 @@ Panel {
         BodyEmpty {
           visible: root.activeTab === "trash" && root.trashView.length === 0
           title: "Trash is empty"
+          subtitle: root.trashKeptText + " before it is deleted"
         }
 
         Yanc.SettingsList {
@@ -489,6 +498,7 @@ Panel {
         BodyEmpty {
           visible: root.activeTab === "settings" && root.settingsFilter === "apps" && root.settingsView.length === 0
           title: "No apps in the archive yet"
+          subtitle: "An app shows up here once it has sent a notification"
         }
       }
 
