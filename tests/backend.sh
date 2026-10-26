@@ -268,8 +268,11 @@ expect "fields as the 4.0 path writes them" "$(jq -c 'select(.key == "nmvp10elc9
   "$(jq -nc --arg g "$(jq -r '.[] | select(.key == "nmvp10elc9") | .glyph' "$fx/history.json")" \
     '{key:"nmvp10elc9",app:"omarchy-action",appIcon:"battery-caution",summary:"Fixture summary 5",body:"Fixture body 5",image:"",preview:"",file:"",glyph:$g,urgency:1,timestamp:1793005215456}')"
 expect "urgencies kept (low / critical)" "$(jq -r 'select(.key == "nmvp2hef8e" or .key == "nmvo4b91g11") | .urgency' "$a" | paste -sd' ')" "2 0"
-expect "no pictures archived, even for a real screenshot path" \
-  "$(jq -r 'select(.key == "nmvp0h2bc5") | .image + .preview' "$a")|$(find "$o/store/images" -type f | wc -l)" "|0"
+expect "a screenshot's click command gives a preview, as on 4.0" \
+  "$(jq -r 'select(.key == "nmvp0h2bc5") | .preview' "$a")" "file://$o/store/images/nmvp0h2bc5-preview.png"
+expect "...and nothing else is copied" "$(find "$o/store/images" -type f | wc -l)" 1
+expect "a browser notification links to its site" "$(jq -r 'select(.key == "nmvp1dn8xb") | .link' "$a")" "https://chat.example.org/"
+expect "no link field when there is none" "$(jq -c 'select(.key == "nmvp4z4h67") | has("link")' "$a")" false
 gone "the old history/ folder is not created" "$o/src/history"
 expect "the ledger holds the keys both files hold" "$(LC_ALL=C sort "$o/store/engine-keys" | paste -sd' ')" \
   "$(jq -r '.[].key' "$o/src/history.json" "$o/src/live.json" | LC_ALL=C sort | paste -sd' ')"
@@ -335,6 +338,71 @@ if command -v inotifywait >/dev/null 2>&1; then
 else
   echo "SKIP  watch omapager (no inotifywait)"
 fi
+
+echo "== omapager: links, live captures, redaction"
+c=$tmp/capture
+C() { YANC_SRC_DIR=$c/src YANC_STORE=$c/store bash "$backend" "$@"; }
+mkdir -p "$c/src" "$c/store/captures" "$c/home"
+cshot=$c/home/shot.png; png "$cshot"
+jq -nc --arg shot "$cshot" '[
+  {key:"l1",app:"Chromium",summary:"PR",body:"see https://github.com/a/b/pull/1). thanks",rawBody:"",source:"github.com",ts:1793012000},
+  {key:"l2",app:"Mail",summary:"x",body:"Open",rawBody:"<a href=\"https://example.org/x?a=1&amp;b=2\">Open</a>",source:"",ts:1793012001},
+  {key:"l3",app:"Evil",summary:"x",body:"javascript:alert(1) file:///etc/passwd http://-bad/ https://a..b/",rawBody:"<a href=\"javascript:alert(1)\">x</a>",source:"../etc",ts:1793012002},
+  {key:"l4",app:"Signal",summary:"Verification notification",body:"[redacted]",rawBody:"",source:"accounts.example.org",ts:1793012003},
+  {key:"l5",app:"Shot",summary:"Screenshot",body:"saved",execArgv:([ "xdg-open", $shot ] | tojson),source:"omasnap",ts:1793012004},
+  {key:"l6",app:"Chat",summary:"Ann",body:"hi",source:"",ts:1793012005}
+]' > "$c/src/history.json"
+printf '[]\n' > "$c/src/live.json"
+# A toast captured before ingest: the picture waits in captures/.
+png "$c/store/captures/l6.png"
+# A capture for a redacted toast is refused when it is filed.
+png "$c/store/captures/l4.png"
+C sync omapager > /dev/null
+ca=$c/store/archive.jsonl
+expect "link: first web address in the text, trailing punctuation cut" "$(jq -r 'select(.key == "l1") | .link' "$ca")" "https://github.com/a/b/pull/1"
+expect "link: an <a href> in rawBody, entities decoded" "$(jq -r 'select(.key == "l2") | .link' "$ca")" "https://example.org/x?a=1&b=2"
+expect "link: no javascript:, file:, broken hosts or ../ sources" "$(jq -c 'select(.key == "l3") | has("link")' "$ca")" false
+expect "redacted: no link even with a source" "$(jq -c 'select(.key == "l4") | has("link")' "$ca")" false
+expect "preview from the click command (execArgv)" "$(jq -r 'select(.key == "l5") | .preview' "$ca")" "file://$c/store/images/l5-preview.png"
+expect "a capture staged before ingest is not taken by sync itself" "$(jq -r 'select(.key == "l6") | .image' "$ca")" ""
+out=$(C capture l6)
+expect "capture files it and prints the patched entry" "$(jq -r '.key + " " + .image' <<< "$out")" "l6 file://$c/store/images/l6-image.png"
+expect "...in the archive too" "$(jq -r 'select(.key == "l6") | .image' "$ca")" "file://$c/store/images/l6-image.png"
+gone "...and the staged copy is gone" "$c/store/captures/l6.png"
+out=$(C capture l4)
+expect "capture for a redacted row prints nothing" "$out" ""
+expect "...keeps no picture" "$(find "$c/store/images" -name 'l4-*' | wc -l)" 0
+expect "...and the row stays without one" "$(jq -r 'select(.key == "l4") | .image' "$ca")" ""
+# Captured while the toast is up, archived later: sync attaches it.
+png "$c/store/captures/l7.png"
+expect "capture of a row not archived yet" "$(C capture l7)" ""
+jq -nc '[{key:"l7",app:"Chat",summary:"Bob",body:"yo",ts:1793012010}]' > "$c/src/live.json"
+C sync omapager > /dev/null
+expect "sync attaches an earlier capture" "$(jq -r 'select(.key == "l7") | .image' "$ca")" "file://$c/store/images/l7-image.png"
+printf 'not a picture' > "$c/store/captures/l8.png"
+out=$(C capture l8 2>/dev/null); rc=$?
+expect "capture refuses a non-picture" "$rc|$(jq -r .error <<< "$out")" "1|not a picture"
+gone "...and removes it" "$c/store/captures/l8.png"
+expect "capture with nothing staged" "$(C capture l9 2>/dev/null | jq -r .error)" "nothing captured for l9"
+expect "capture refuses a bad key" "$(C capture ../x 2>/dev/null | jq -r .error)" "capture needs a key"
+ln -s "$cshot" "$c/store/captures/l10.png"
+expect "capture refuses a symlink" "$(C capture l10 2>/dev/null | jq -r .error)" "nothing captured for l10"
+rm -f "$c/store/captures/l10.png"
+# Trash: the picture follows a row already dismissed.
+C dismiss l1 > /dev/null; png "$c/store/captures/l1.png"; C capture l1 > /dev/null
+expect "capture patches a row in Trash" "$(jq -r 'select(.key == "l1") | .image' "$c/store/trash.jsonl")" "file://$c/store/images/l1-image.png"
+# showPreview off: no new screenshot copies.
+C settings-set '{"showPreview":false}' > /dev/null
+jq -nc --arg shot "$cshot" '[{key:"l11",app:"Shot",summary:"s",body:"b",execArgv:([ "xdg-open", $shot ] | tojson),ts:1793012020}]' > "$c/src/live.json"
+C sync omapager > /dev/null
+expect "showPreview off: no preview copied" "$(jq -r 'select(.key == "l11") | .preview' "$ca")|$(find "$c/store/images" -name 'l11-*' | wc -l)" "|0"
+# Sweep: day-old unclaimed captures and orphan pictures go.
+png "$c/store/captures/old.png"; touch -d '2 days ago' "$c/store/captures/old.png"
+png "$c/store/images/ghost-image.png"; touch -d '2 days ago' "$c/store/images/ghost-image.png"
+C sync omapager > /dev/null
+gone "sync sweeps a day-old capture nobody claimed" "$c/store/captures/old.png"
+gone "...and an orphan captured picture" "$c/store/images/ghost-image.png"
+exists "...but keeps pictures of archived rows" "$c/store/images/l6-image.png"
 
 echo
 printf 'RESULT  %d passed, %d failed\n' "$pass" "$fail"
