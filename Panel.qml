@@ -367,14 +367,7 @@ Panel {
     }
   }
 
-  function noticeIdentity(row) {
-    var app = String((row && row.app) || "").replace(/^\s+|\s+$/g, "")
-    if (!app) app = "Notification"
-    var summary = String((row && row.summary) || "").replace(/^\s+|\s+$/g, "")
-    if (summary.length > 42) summary = summary.slice(0, 41) + "…"
-    if (summary) return app + " · " + summary
-    return app
-  }
+  function noticeIdentity(row) { return Model.noticeIdentity(row) }
 
   function flashNotice(list, index, title, detail) {
     var wrap = list && list.itemAtIndex ? list.itemAtIndex(index) : null

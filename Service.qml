@@ -30,14 +30,7 @@ Item {
     return rootDir + "/omarchy/notifications.json"
   }
 
-  readonly property int unread: {
-    var count = 0
-    for (var i = 0; i < entries.length; i++) {
-      if (entries[i].timestamp > lastSeen) count++
-      else break
-    }
-    return count
-  }
+  readonly property int unread: Model.unreadCount(entries, lastSeen)
 
   readonly property string script:
     Qt.resolvedUrl("scripts/backend.sh").toString().replace(/^file:\/\//, "")
@@ -276,17 +269,11 @@ Item {
   }
 
   function absorb(line) {
-    var entry
-    try { entry = JSON.parse(line) } catch (e) { return }
-    if (!entry || !Model.isSafeKey(entry.key)) return
-    for (var i = 0; i < entries.length; i++)
-      if (entries[i].key === entry.key) return
-    var next = [entry].concat(entries)
-    var limit = Number(root.cfg.displayLimit || 50)
-    if (next.length > limit) next = next.slice(0, limit)
-    entries = next
-    entryAdded(entry)
-    maybePlay(entry)
+    var res = Model.absorbLine(entries, line, root.cfg.displayLimit)
+    if (!res) return
+    entries = res.entries
+    entryAdded(res.entry)
+    maybePlay(res.entry)
   }
 
   function maybePlay(entry) {
@@ -331,21 +318,11 @@ Item {
     var hasModel = !!(n && n.popupModel)
     var count = hasModel ? n.popupModel.count : 0
     var ms = Number(root.cfg.autoHideMs || 0)
-    if (ms <= 0) {
-      hideTimer.stop()
-      root.lastPopupCount = count
-      return
-    }
-    if (!hasModel) return
-    if (count === 0) {
-      hideTimer.stop()
-    } else if (count > root.lastPopupCount) {
-      hideTimer.interval = ms
-      hideTimer.restart()
-    } else if (!hideTimer.running) {
-      hideTimer.interval = ms
-      hideTimer.start()
-    }
+    var step = Model.autoHideStep(ms, hasModel, count, root.lastPopupCount, hideTimer.running)
+    if (step === "" && !hasModel && ms > 0) return
+    if (step === "stop") hideTimer.stop()
+    else if (step === "restart") { hideTimer.interval = ms; hideTimer.restart() }
+    else if (step === "start") { hideTimer.interval = ms; hideTimer.start() }
     root.lastPopupCount = count
   }
 

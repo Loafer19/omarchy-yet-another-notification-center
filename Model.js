@@ -414,3 +414,56 @@ function copyTextFor(row) {
   if (!text) text = String(r.summary || "").replace(/^\s+|\s+$/g, "")
   return text
 }
+
+// --- service logic (pure, so tests/model.test.js can cover it) ---------------
+
+// History is newest first: count the leading entries newer than the read mark.
+function unreadCount(entries, lastSeen) {
+  var list = entries || []
+  var seen = Number(lastSeen) || 0
+  var count = 0
+  var i
+  for (i = 0; i < list.length; i++) {
+    if (Number(list[i].timestamp) > seen) count++
+    else break
+  }
+  return count
+}
+
+// One line from `backend.sh watch`. Returns { entries, entry } with the entry
+// prepended (capped at limit), or null for bad JSON, unsafe keys and
+// duplicates.
+function absorbLine(entries, line, limit) {
+  var entry
+  try { entry = JSON.parse(line) } catch (e) { return null }
+  if (!entry || typeof entry !== "object" || !isSafeKey(entry.key)) return null
+  var list = entries || []
+  var i
+  for (i = 0; i < list.length; i++)
+    if (list[i].key === entry.key) return null
+  var next = [entry].concat(list)
+  var cap = Number(limit || 50)
+  if (next.length > cap) next = next.slice(0, cap)
+  return { entries: next, entry: entry }
+}
+
+// What the auto-hide timer should do on a toast-count poll:
+// "stop", "restart", "start" or "" (leave it).
+function autoHideStep(ms, hasModel, count, lastCount, timerRunning) {
+  if (Number(ms || 0) <= 0) return "stop"
+  if (!hasModel) return ""
+  if (count === 0) return "stop"
+  if (count > lastCount) return "restart"
+  if (!timerRunning) return "start"
+  return ""
+}
+
+// "App · summary" for row notices (summary cut at 42 chars).
+function noticeIdentity(row) {
+  var app = String((row && row.app) || "").replace(/^\s+|\s+$/g, "")
+  if (!app) app = "Notification"
+  var summary = String((row && row.summary) || "").replace(/^\s+|\s+$/g, "")
+  if (summary.length > 42) summary = summary.slice(0, 41) + "\u2026"
+  if (summary) return app + " \u00b7 " + summary
+  return app
+}
