@@ -27,6 +27,7 @@ e() { # key app icon summary body urgency minutes-ago preview
   e k2 "Chat" "" "Alex: standup moved to 10:30" "Can everyone make it? Otherwise async notes in #team" 1 1600 ""
   e k3 "Disk" "" "Disk almost full" "/home has 3% free space left" 2 1500 ""
   e k4 "Music" "" "Now playing" "Example Artist — Example Track" 0 300 ""
+  # shellcheck disable=SC2088  # a literal "~/" path, as the sender shows it
   e k5 "Screenshot" "" "Screenshot saved" "~/Pictures/screenshot.png" 1 95 "file://$s/images/k5-preview.png"
   e k6 "Messages" "" "Sam" "A longer message body that wraps onto a second line in the card so you can see how the text is clipped." 1 40 ""
   e k7 "Battery" "" "Battery critically low" "5% remaining — plug in now" 2 12 ""

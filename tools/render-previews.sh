@@ -45,7 +45,7 @@ render() { # render FILE ENTRY [VAR=VALUE ...]
   rm -rf "$st"; bash "$root/tests/preview/fixture.sh" "$st"
   env "$@" XDG_STATE_HOME="$st" YANC_SRC_DIR="$st/omarchy/notifications" \
     YANC_STORE="$st/omarchy/yoyo.notification-center" PREVIEW_OUT="$file" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-    QT_SCALE_FACTOR=${PREVIEW_SCALE:-2} timeout 40 qs -p "$entry" > "$log" 2>&1 || true
+    QT_SCALE_FACTOR="${PREVIEW_SCALE:-2}" timeout 40 qs -p "$entry" > "$log" 2>&1 || true
   reap
   if grep -q '^.*saved ' "$log" && [[ -s $file ]]; then
     echo "saved $file"
