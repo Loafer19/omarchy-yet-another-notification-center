@@ -14,16 +14,15 @@ pass=0; fail=0
 ok() { printf 'PASS  %s\n' "$1"; pass=$((pass + 1)); }
 no() { printf 'FAIL  %s\n%s\n' "$1" "${2:-}"; fail=$((fail + 1)); }
 
-# The legacy backend = today's backend with prune() swapped for the old one,
-# so both share every other helper (limits, drop_images, locking, clock).
-mkdir -p "$tmp/legacy/scripts"
+# The legacy backend = today's backend with prune() swapped for the old one
+# (appended to lib/store.sh, so it wins), so both share every other helper
+# (limits, drop_images, locking, clock).
+mkdir -p "$tmp/legacy"
+cp -r "$here/../scripts" "$tmp/legacy/scripts"
 cp "$here/../defaults.js" "$tmp/legacy/defaults.js"   # backend reads ../defaults.js
 legacy=$tmp/legacy/scripts/backend.sh
-awk -v ref="$here/legacy/prune-v1.3.1.sh" '
-  /^prune\(\) \{/ { skip = 1; while ((getline l < ref) > 0) if (l !~ /^#/) print l; next }
-  skip && /^\}/ { skip = 0; next }
-  !skip' "$backend" > "$legacy"
-grep -q "one jq per overflow line\|printf '%s\\\\n' \"\$line\" | jq -c" "$legacy" \
+grep -v '^#' "$here/legacy/prune-v1.3.1.sh" >> "$tmp/legacy/scripts/lib/store.sh"
+grep -q "one jq per overflow line\|printf '%s\\\\n' \"\$line\" | jq -c" "$tmp/legacy/scripts/lib/store.sh" \
   || { no "legacy backend built" "prune() was not replaced"; exit 1; }
 
 export YANC_NOW_MS; YANC_NOW_MS=$(cat "$fixtures/NOW")
