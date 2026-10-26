@@ -44,6 +44,21 @@ cmd_watch() {
   set_engine "${1:-legacy}"
   ensure_store
   local -a dirs
+  watch_dirs
+  quiet=1
+  cmd_sync
+
+  command -v inotifywait >/dev/null 2>&1 || die "inotifywait is not installed"
+
+  local self=$BASHPID parent
+  parent=$(ps -o ppid= -p "$self" 2>/dev/null | tr -d ' ')
+  start_watcher "$self"
+  trap 'kill "$watcher" 2>/dev/null' EXIT INT TERM
+  watch_loop "$self" "$parent"
+}
+
+# Sets the caller's dirs to the folders to watch, creating them.
+watch_dirs() {
   if [[ $engine == omapager ]]; then
     # 4.5 keeps everything in two files; never recreate the old history/.
     mkdir -p "$src_dir" "$captures" && chmod 700 "$captures" 2>/dev/null
@@ -52,18 +67,16 @@ cmd_watch() {
     mkdir -p "$src_dir" "$src_history"
     dirs=("$src_dir" "$src_history")
   fi
-  quiet=1
-  cmd_sync
+}
 
-  command -v inotifywait >/dev/null 2>&1 || die "inotifywait is not installed"
-
-  # inotifywait must not outlive us. The EXIT trap only runs when we exit
-  # cleanly; when the shell restarts, this script can be SIGKILLed, and the
-  # watcher used to linger, reparented to systemd, one per restart. So the
-  # kernel kills it with us (setpriv --pdeathsig), or, without setpriv, a
-  # small guard does once our pid is gone.
-  local self=$BASHPID parent check=${YANC_WATCH_CHECK:-5}
-  parent=$(ps -o ppid= -p "$self" 2>/dev/null | tr -d ' ')
+# Starts inotifywait on dirs as fd 3 and sets watcher to its pid.
+# inotifywait must not outlive us. The EXIT trap only runs when we exit
+# cleanly; when the shell restarts, this script can be SIGKILLed, and the
+# watcher used to linger, reparented to systemd, one per restart. So the
+# kernel kills it with us (setpriv --pdeathsig), or, without setpriv, a
+# small guard does once our pid (SELF) is gone.
+start_watcher() {
+  local self=$1
   local -a deathsig=()
   if [[ -z ${YANC_NO_PDEATHSIG:-} ]] && command -v setpriv >/dev/null 2>&1 \
     && setpriv --pdeathsig TERM true 2>/dev/null; then
@@ -75,9 +88,11 @@ cmd_watch() {
   if (( ${#deathsig[@]} == 0 )); then
     (while kill -0 "$self" 2>/dev/null; do sleep 1; done; kill "$watcher" 2>/dev/null) >/dev/null 2>&1 &
   fi
-  trap 'kill "$watcher" 2>/dev/null' EXIT INT TERM
+}
 
-  local file rc now_parent
+# Ingests every changed file inotifywait reports on fd 3.
+watch_loop() {
+  local self=$1 parent=$2 check=${YANC_WATCH_CHECK:-5} file rc now_parent
   while true; do
     IFS= read -r -t "$check" file <&3; rc=$?
     if (( rc > 128 )); then
@@ -89,13 +104,19 @@ cmd_watch() {
       continue
     fi
     (( rc == 0 )) || break
-    if [[ $engine == omapager ]]; then
-      [[ $file == "$engine_live" || $file == "$engine_history" ]] || continue
-      with_lock ingest_engine_one
-      continue
-    fi
-    [[ $file == *.json ]] || continue
-    is_under "$file" "$src_dir" || is_under "$file" "$src_history" || continue
-    with_lock ingest_one "$file"
+    watch_event "$file"
   done
+}
+
+# One changed FILE: re-read the omapager files, or ingest a legacy file.
+watch_event() {
+  local file=$1
+  if [[ $engine == omapager ]]; then
+    [[ $file == "$engine_live" || $file == "$engine_history" ]] || return 0
+    with_lock ingest_engine_one
+    return 0
+  fi
+  [[ $file == *.json ]] || return 0
+  is_under "$file" "$src_dir" || is_under "$file" "$src_history" || return 0
+  with_lock ingest_one "$file"
 }

@@ -4,58 +4,64 @@
 
 prune() {
   load_runtime_limits
-  local cutoff trash_cutoff now limit tagged key
-
+  local now limit
   now=$(now_ms)
-  cutoff=$(( now - keep_days * 86400000 ))
-  trash_cutoff=$(( now - trash_days * 86400000 ))
   limit=$history_limit
   (( limit < 1 )) && limit=1
+  prune_history "$now" "$limit" || return 1
+  prune_trash "$now"
+}
 
-  if [[ -s $archive ]]; then
-    # One jq pass over History, in file order:
-    # - entries older than keepDays are dropped for good;
-    # - History keeps the newest displayLimit (and never more than maxItems);
-    #   the oldest overflow goes to Trash with trashedAt = now.
-    # Lines are tagged "A\t" (stay) / "T\t" (to Trash); compact JSON never
-    # contains a raw tab. If jq fails nothing is written.
-    tagged=$(jq -Rnr --argjson cutoff "$cutoff" --argjson limit "$limit" \
-        --argjson max "$max_items" --argjson now "$now" '
-      [inputs | fromjson? // empty | select((.timestamp // 0) >= $cutoff)] as $kept
-      | ([$limit, $max] | min | if . < 0 then 0 else . end) as $cap
-      | ([($kept | length) - $cap, 0] | max) as $drop
-      | ($kept[:$drop][] | "T\t" + (. + {trashedAt: $now} | tojson)),
-        ($kept[$drop:][] | "A\t" + tojson)
-    ' "$archive" 2>/dev/null) || return 1
-    # New History first, so a failed write changes nothing; then Trash.
-    if ! printf '%s\n' "$tagged" | sed -n 's/^A\t//p' > "$archive.tmp"; then
-      rm -f "$archive.tmp"; return 1
-    fi
-    if [[ $tagged == *$'T\t'* ]] \
-        && ! printf '%s\n' "$tagged" | sed -n 's/^T\t//p' >> "$trash"; then
-      rm -f "$archive.tmp"; return 1
-    fi
-    mv -f "$archive.tmp" "$archive" || { rm -f "$archive.tmp"; return 1; }
+# History: one jq pass, in file order:
+# - entries older than keepDays are dropped for good;
+# - History keeps the newest displayLimit (and never more than maxItems);
+#   the oldest overflow goes to Trash with trashedAt = NOW.
+# Lines are tagged "A\t" (stay) / "T\t" (to Trash); compact JSON never
+# contains a raw tab. If jq fails nothing is written.
+prune_history() {
+  local now=$1 limit=$2 cutoff tagged
+  [[ -s $archive ]] || return 0
+  cutoff=$(( now - keep_days * 86400000 ))
+  tagged=$(jq -Rnr --argjson cutoff "$cutoff" --argjson limit "$limit" \
+      --argjson max "$max_items" --argjson now "$now" '
+    [inputs | fromjson? // empty | select((.timestamp // 0) >= $cutoff)] as $kept
+    | ([$limit, $max] | min | if . < 0 then 0 else . end) as $cap
+    | ([($kept | length) - $cap, 0] | max) as $drop
+    | ($kept[:$drop][] | "T\t" + (. + {trashedAt: $now} | tojson)),
+      ($kept[$drop:][] | "A\t" + tojson)
+  ' "$archive" 2>/dev/null) || return 1
+  # New History first, so a failed write changes nothing; then Trash.
+  if ! printf '%s\n' "$tagged" | sed -n 's/^A\t//p' > "$archive.tmp"; then
+    rm -f "$archive.tmp"; return 1
   fi
+  if [[ $tagged == *$'T\t'* ]] \
+      && ! printf '%s\n' "$tagged" | sed -n 's/^T\t//p' >> "$trash"; then
+    rm -f "$archive.tmp"; return 1
+  fi
+  mv -f "$archive.tmp" "$archive" || { rm -f "$archive.tmp"; return 1; }
+  return 0
+}
 
-  if [[ -s $trash ]]; then
-    # One jq pass over Trash: keep entries newer than trashDays, list the keys
-    # that are gone (no kept entry with that key) so their pictures go too.
-    tagged=$(jq -Rnr --argjson cutoff "$trash_cutoff" '
-      [inputs | fromjson? // empty] as $all
-      | ($all | map(select((.trashedAt // .timestamp // 0) >= $cutoff))) as $kept
-      | ($kept | map(.key // empty | tostring) | unique) as $keep
-      | ($kept[] | "A\t" + tojson),
-        ($all | map(.key // empty | tostring) | unique - $keep | .[] | "D\t" + .)
-    ' "$trash" 2>/dev/null) || return 1
-    if ! printf '%s\n' "$tagged" | sed -n 's/^A\t//p' > "$trash.tmp" \
-        || ! mv -f "$trash.tmp" "$trash"; then
-      rm -f "$trash.tmp"; return 1
-    fi
-    while IFS= read -r key; do
-      [[ -n $key ]] && drop_images "$key"
-    done < <(printf '%s\n' "$tagged" | sed -n 's/^D\t//p')
+# Trash: one jq pass keeps entries newer than trashDays and lists the keys
+# that are gone (no kept entry with that key) so their pictures go too.
+prune_trash() {
+  local now=$1 cutoff tagged key
+  [[ -s $trash ]] || return 0
+  cutoff=$(( now - trash_days * 86400000 ))
+  tagged=$(jq -Rnr --argjson cutoff "$cutoff" '
+    [inputs | fromjson? // empty] as $all
+    | ($all | map(select((.trashedAt // .timestamp // 0) >= $cutoff))) as $kept
+    | ($kept | map(.key // empty | tostring) | unique) as $keep
+    | ($kept[] | "A\t" + tojson),
+      ($all | map(.key // empty | tostring) | unique - $keep | .[] | "D\t" + .)
+  ' "$trash" 2>/dev/null) || return 1
+  if ! printf '%s\n' "$tagged" | sed -n 's/^A\t//p' > "$trash.tmp" \
+      || ! mv -f "$trash.tmp" "$trash"; then
+    rm -f "$trash.tmp"; return 1
   fi
+  while IFS= read -r key; do
+    [[ -n $key ]] && drop_images "$key"
+  done < <(printf '%s\n' "$tagged" | sed -n 's/^D\t//p')
   return 0
 }
 
@@ -136,44 +142,24 @@ empty_trash() {
   done <<< "$keys"
 }
 
-cmd_dismiss() {
+# One keyed change under the lock: VERB (dismiss, restore, purge) runs
+# VERB_key KEY and reports DONE ("dismissed") or, when the key is not there,
+# "not in WHERE".
+keyed_cmd() {
+  local verb=$1 done=$2 where=$3 key=${4:-} rc=0
   ensure_store
-  local key=${1:-}
-  valid_key "$key" || die "dismiss needs a key"
-  local rc=0
-  with_lock dismiss_key "$key" || rc=$?
+  valid_key "$key" || die "$verb needs a key"
+  with_lock "${verb}_key" "$key" || rc=$?
   case $rc in
-    0) printf '{"ok":true,"dismissed":%s}\n' "$(json_string "$key")" ;;
-    2) die "not in history" ;;
+    0) printf '{"ok":true,"%s":%s}\n' "$done" "$(json_string "$key")" ;;
+    2) die "not in $where" ;;
     *) die "cannot write $store" ;;
   esac
 }
 
-cmd_restore() {
-  ensure_store
-  local key=${1:-}
-  valid_key "$key" || die "restore needs a key"
-  local rc=0
-  with_lock restore_key "$key" || rc=$?
-  case $rc in
-    0) printf '{"ok":true,"restored":%s}\n' "$(json_string "$key")" ;;
-    2) die "not in trash" ;;
-    *) die "cannot write $store" ;;
-  esac
-}
-
-cmd_purge() {
-  ensure_store
-  local key=${1:-}
-  valid_key "$key" || die "purge needs a key"
-  local rc=0
-  with_lock purge_key "$key" || rc=$?
-  case $rc in
-    0) printf '{"ok":true,"purged":%s}\n' "$(json_string "$key")" ;;
-    2) die "not in trash" ;;
-    *) die "cannot write $store" ;;
-  esac
-}
+cmd_dismiss() { keyed_cmd dismiss dismissed history "${1:-}"; }
+cmd_restore() { keyed_cmd restore restored trash "${1:-}"; }
+cmd_purge() { keyed_cmd purge purged trash "${1:-}"; }
 
 cmd_clear() {
   ensure_store

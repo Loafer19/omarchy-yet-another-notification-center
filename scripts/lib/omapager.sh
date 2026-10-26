@@ -57,60 +57,22 @@ engine_finish() {
     <<< "$line" 2>/dev/null || jq -c 'del(._exec)' <<< "$line"
 }
 
+# Keys archive, trash and the ledger hold, one JSON string per line.
+engine_known_keys() {
+  jq -Rc 'fromjson? // empty | .key // empty | strings' "$archive" "$trash" 2>/dev/null
+  jq -Rc 'select(length > 0)' "$ledger" 2>/dev/null
+  return 0
+}
+
 # Archive every row of live.json and history.json not seen before; print the
 # new entries. Known = archive + trash + the ledger. The ledger is then the
 # keys both files hold now, so it stays as small as they are.
-# link: the first web address in the text, else the site a browser
-# notification came from (its source).
 ingest_engine() {
   local rows new line done_lines=""
   rows=$( { engine_rows "$engine_history" newest-first; engine_rows "$engine_live" oldest-first; } )
   [[ -n $rows ]] || { : > "$ledger"; return 0; }
-  new=$(printf '%s\n' "$rows" | jq -nc \
-      --slurpfile have <( { jq -Rc 'fromjson? // empty | .key // empty | strings' "$archive" "$trash" 2>/dev/null
-                           cat "$ledger" 2>/dev/null | jq -Rc 'select(length > 0)'; } ) '
-    def icon: tostring | if test("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$") and (contains("..") | not)
-                         then . else "" end;
-    def ms: (tonumber? // 0) | if . > 0 then (. * 1000 | round) else 0 end;
-    def weburl: if type == "string" and length <= 2048
-                   and test("^https?://[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*(:[0-9]{1,5})?([/?#][^\\s<>\"'"'"'\\\\]*)?$")
-                   and (explode | any(. < 32 or (. >= 127 and . < 160)) | not)
-                then . else "" end;
-    def link: . as $row | ((($row.rawBody // "") | tostring) + " " + (($row.body // "") | tostring)) as $b
-      | ([ ($b | [scan("href=[\"'"'"'](https?://[^\"'"'"'<>\\s]+)[\"'"'"']")] | map(.[0]) | .[]),
-           ($b | gsub("<[^>]*>"; " ") | [scan("https?://[^\\s<>\"'"'"']+")] | .[]
-               | sub("[).,;:!?]+$"; "")) ]
-         | map(gsub("&amp;"; "&") | weburl) | map(select(. != "")) | first) // ""
-      | if . != "" then .
-        else (($row.source // "") | tostring | ascii_downcase
-              | if test("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
-                then "https://" + . + "/" else "" end)
-        end;
-    def redacted: .summary == "Verification notification" and .body == "[redacted]";
-    reduce inputs as $r ({k: ($have | map({(.): true}) | add // {}), out: []};
-      if .k[$r.key] then . else .k[$r.key] = true | .out += [$r] end)
-    | .out[]
-    | (if redacted then "" else link end) as $link
-    | ((.execArgv // "") | if type == "string" then . elif type == "array" then tojson else "" end) as $exec
-    | {
-        key: .key,
-        app: ((.app // "") | tostring | .[0:64]),
-        appIcon: ((.appIcon // "") | icon),
-        summary: ((.summary // "") | tostring | .[0:240]),
-        body: ((.body // "") | tostring | .[0:500]),
-        image: "",
-        preview: "",
-        file: "",
-        glyph: ((.glyph // "") | tostring | .[0:8]),
-        urgency: (if (.urgency | tonumber? // 1) >= 2 then 2
-                  elif (.urgency | tonumber? // 1) <= 0 then 0
-                  else 1 end),
-        timestamp: (((.ts // 0) | ms) as $t
-                    | if $t > 0 then $t else ((.closed_ts // 0) | ms) end)
-      }
-    | if $link != "" then .link = $link else . end
-    | ._exec = $exec
-  ') || return 1
+  new=$(printf '%s\n' "$rows" | jq -nc --slurpfile have <(engine_known_keys) \
+      -f "$lib/omapager-rows.jq") || return 1
   if [[ -n $new ]]; then
     while IFS= read -r line; do
       [[ -n $line ]] || continue

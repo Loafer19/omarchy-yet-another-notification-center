@@ -73,28 +73,28 @@ now_ms() {
 
 load_runtime_limits() {
   [[ -f $settings_file ]] || return 0
-  local kd mi td dl cfg
+  local cfg
   cfg=$(defaults_config)
-  kd=$(jq -r '.keepDays // empty' "$settings_file" 2>/dev/null || true)
-  mi=$(jq -r '.maxItems // empty' "$settings_file" 2>/dev/null || true)
-  td=$(jq -r '.trashDays // empty' "$settings_file" 2>/dev/null || true)
-  dl=$(jq -r '.displayLimit // empty' "$settings_file" 2>/dev/null || true)
-  if [[ $kd =~ ^[0-9]+$ ]]; then
-    keep_days=$(printf '%s' "$cfg" | jq -r --argjson v "$kd" '.limits.keepDays | if $v >= .min and $v <= .max then $v else .fallback end')
-  fi
-  if [[ $mi =~ ^[0-9]+$ ]]; then
-    max_items=$(printf '%s' "$cfg" | jq -r --argjson v "$mi" '.limits.maxItems | if $v >= .min and $v <= .max then $v else .fallback end')
-  fi
-  if [[ $td =~ ^[0-9]+$ ]]; then
-    trash_days=$(printf '%s' "$cfg" | jq -r --argjson v "$td" '.limits.trashDays | if $v >= .min and $v <= .max then $v else .fallback end')
-  fi
-  if [[ $dl =~ ^[0-9]+$ ]]; then
-    history_limit=$(printf '%s' "$cfg" | jq -r --argjson v "$dl" '.limits.displayLimit | if $v >= .min and $v <= .max then $v else .fallback end')
-  fi
+  limit_setting keep_days keepDays "$cfg"
+  limit_setting max_items maxItems "$cfg"
+  limit_setting trash_days trashDays "$cfg"
+  limit_setting history_limit displayLimit "$cfg"
   # History cannot outgrow the archive ceiling.
   if (( history_limit > max_items )); then
     history_limit=$max_items
   fi
+}
+
+# Sets variable VAR to settings.json's KEY when it is a whole number, or to
+# the limit's fallback when it is out of range (CFG: defaults.js config).
+limit_setting() {
+  local -n out=$1
+  local key=$2 cfg=$3 v
+  v=$(jq -r --arg k "$key" '.[$k] // empty' "$settings_file" 2>/dev/null || true)
+  [[ $v =~ ^[0-9]+$ ]] || return 0
+  # shellcheck disable=SC2034 # nameref
+  out=$(printf '%s' "$cfg" | jq -r --arg k "$key" --argjson v "$v" \
+    '.limits[$k] | if $v >= .min and $v <= .max then $v else .fallback end')
 }
 
 valid_key() {

@@ -14,20 +14,17 @@ sound_event() {
 
 cmd_play_sound() {
   local id=${1:-message-new-instant} event file
+  local not_played='{"ok":true,"played":false}'
   event=$(sound_event "$id")
-  [[ -n $event ]] || { printf '{"ok":true,"played":false}\n'; return 0; }
-  valid_sound "$event" || { printf '{"ok":true,"played":false}\n'; return 0; }
-  [[ $event == mute ]] && { printf '{"ok":true,"played":false}\n'; return 0; }
+  [[ -n $event ]] && valid_sound "$event" && [[ $event != mute ]] \
+    || { printf '%s\n' "$not_played"; return 0; }
   file="/usr/share/sounds/freedesktop/stereo/${event}.oga"
   if [[ -f $file ]] && command -v pw-play >/dev/null 2>&1; then
     pw-play -- "$file" >/dev/null 2>&1 &
-    printf '{"ok":true,"played":true,"id":%s}\n' "$(printf '%s' "$event" | jq -Rs .)"
-    return 0
-  fi
-  if command -v canberra-gtk-play >/dev/null 2>&1; then
+  elif command -v canberra-gtk-play >/dev/null 2>&1; then
     canberra-gtk-play -i "$event" >/dev/null 2>&1 &
-    printf '{"ok":true,"played":true,"id":%s}\n' "$(printf '%s' "$event" | jq -Rs .)"
-    return 0
+  else
+    printf '%s\n' "$not_played"; return 0
   fi
-  printf '{"ok":true,"played":false}\n'
+  printf '{"ok":true,"played":true,"id":%s}\n' "$(json_string "$event")"
 }
