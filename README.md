@@ -34,6 +34,18 @@ Optional — the feature is skipped or shows an error without it:
 - `xdg-open` [xdg-utils] — open a notification's picture
 - `omarchy-hyprland-focus-app` (Omarchy) — click a row to focus the app
 
+## Omarchy versions
+
+Works with both notification engines; the plugin picks one at startup.
+
+- **Omarchy 4.0.x** — copies each notification, pictures included, into its
+  own history. Nothing changed here.
+- **Omarchy 4.5 (Omapager)** — reads the engine's `live.json` / `history.json`
+  under `~/.local/state/omarchy/notifications/`. Auto-hide closes toasts
+  through the engine (and waits while you hover the stack), and DND follows
+  the engine's own switch. Omapager doesn't keep pictures, so new rows have
+  none; older ones still show.
+
 ## Install
 
 ```sh
@@ -74,7 +86,9 @@ tests/run.sh
 Checks the vendored UI kit, runs the Model.js tests with Node and the
 backend tests against a temporary store (your notifications are never
 touched). `tests/autohide.sh` runs the real service in Quickshell (`qs`,
-offscreen) against a fake toast stack and times auto-hide. Also needs `node`.
+offscreen) against a fake toast stack and times auto-hide;
+`tests/omapager.sh` does the same against a fake Omarchy 4.5 engine. Also
+needs `node`.
 
 ## Remove
 

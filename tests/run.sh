@@ -9,3 +9,4 @@ node tests/model.test.js
 bash tests/backend.sh
 bash tests/prune.sh
 bash tests/autohide.sh
+bash tests/omapager.sh
