@@ -9,16 +9,19 @@ BarWidget {
   id: root
   moduleName: "yoyo.notification-center"
 
-  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
-  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+  // The loaded Panel.qml; var because Loader.item is typed QObject.
+  readonly property var panelItem: panelLoader.item
 
-  function open() { if (panelLoader.item) panelLoader.item.open() }
-  function close() { if (panelLoader.item) panelLoader.item.close() }
-  function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
-  function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
+  readonly property bool opened: panelItem ? panelItem.opened === true : false
+  readonly property bool popoutSwitchClosing: panelItem ? panelItem.popoutSwitchClosing === true : false
+
+  function open() { if (panelItem) panelItem.open() }
+  function close() { if (panelItem) panelItem.close() }
+  function toggle() { if (panelItem) panelItem.toggle() }
+  function closeForPopoutSwitch() { if (panelItem) panelItem.closeForPopoutSwitch() }
 
   function injectPanel() {
-    var target = panelLoader.item
+    var target = root.panelItem
     if (!target) return
     if ("bar" in target) target.bar = root.bar
     if ("settings" in target) target.settings = root.settings
@@ -69,14 +72,12 @@ BarWidget {
     }
     onPressed: function(b) {
       if (b === Qt.RightButton) {
-        if (panelLoader.item && panelLoader.item.toggleDnd) panelLoader.item.toggleDnd()
+        if (root.panelItem && root.panelItem.toggleDnd) root.panelItem.toggleDnd()
         return
       }
       root.toggle()
     }
   }
-
-  readonly property var panelItem: panelLoader.item
 
   // Omarchy 4.5: where the service draws a live toast's picture to save it
   // (Service.captureHost needs an item in a shown window). 0x0 and clipped,
@@ -116,8 +117,8 @@ BarWidget {
       id: countText
       anchors.centerIn: parent
       text: root.unread > 99 ? "99+" : String(root.unread)
-      font.family: root.bar ? root.bar.fontFamily : Style.font.family
-      font.pixelSize: Math.max(8, Style.font.caption - Style.space(3))
+      font.family: root.bar ? root.bar.fontFamily : Style.font.family // qmllint disable missing-property
+      font.pixelSize: Math.max(8, Theme.caption - Style.space(3))
       font.bold: true
       color: Theme.background
     }

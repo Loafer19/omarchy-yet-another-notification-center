@@ -27,7 +27,7 @@ Item {
       text: bar.searching ? bar.count + " matching" : (bar.count + " in History")
       color: Theme.dim
       font.family: Theme.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Theme.caption
       anchors.verticalCenter: parent.verticalCenter
     }
   }

@@ -20,8 +20,10 @@ Panel {
   readonly property var barIdentity: hostWidget || root
   readonly property string omarchyPath: Quickshell.env("OMARCHY_PATH")
 
-  readonly property color contentForeground: bar ? bar.foreground : Commons.Color.foreground
-  readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
+  // The host types bar and Style.font as plain QObject, so qmllint cannot
+  // see their members; the disables below are for that alone.
+  readonly property color contentForeground: bar ? bar.foreground : Commons.Color.foreground // qmllint disable missing-property
+  readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family // qmllint disable missing-property
   readonly property int edgeMargin: Style.space(6)
 
   // Shared yoyo-ui Theme follows the bar this panel opens from.
@@ -107,7 +109,7 @@ Panel {
 
   function bindStore() {
     if (store) return
-    var host = bar && bar.shell ? bar.shell : null
+    var host = bar && bar.shell ? bar.shell : null // qmllint disable missing-property
     if (!host || typeof host.serviceFor !== "function") return
     var s = host.serviceFor("yoyo.notification-center")
     if (!s) return
@@ -348,7 +350,7 @@ Panel {
           onChipHovered: function(index) { root.setTabsCursor(index) }
         }
 
-        Rectangle { width: parent.width; height: Style.spacing.hairline; color: Theme.line }
+        Rectangle { width: parent.width; height: Style.spacing.hairline; color: Theme.line } // qmllint disable missing-property
 
         Yanc.HistoryBar {
           width: parent.width

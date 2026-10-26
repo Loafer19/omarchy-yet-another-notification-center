@@ -30,7 +30,7 @@ Item {
     }
     color: Theme.dim
     font.family: Theme.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Theme.caption
   }
 
   HeaderChip {

@@ -153,7 +153,7 @@ CursorSurface {
         text: root.glyph !== "" ? root.glyph : "\uDB80\uDC9A"
         color: root.urgencyColor
         font.family: Theme.fontFamily
-        font.pixelSize: Style.font.icon
+        font.pixelSize: Style.font.icon // qmllint disable missing-property
       }
     }
 
@@ -173,7 +173,7 @@ CursorSurface {
           text: root.app !== "" ? root.app : "Notification"
           color: Theme.dim
           font.family: Theme.fontFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Theme.caption
         }
 
         Text {
@@ -182,7 +182,7 @@ CursorSurface {
           text: (root.urgencyLabel !== "" ? root.urgencyLabel + " · " : "") + root.time
           color: root.urgencyLevel === 2 ? Theme.urgent : Theme.dim
           font.family: Theme.fontFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Theme.caption
           font.bold: root.urgencyLevel === 2
         }
       }
@@ -197,7 +197,7 @@ CursorSurface {
         text: root.summary
         color: Theme.fg
         font.family: Theme.fontFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Theme.body
         font.bold: true
       }
 
@@ -211,7 +211,7 @@ CursorSurface {
         textFormat: Text.PlainText
         color: Theme.dim
         font.family: Theme.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Theme.caption
       }
     }
   }
@@ -235,7 +235,7 @@ CursorSurface {
       text: root.copied ? "󰄬" : "󰆏"
       color: root.copied ? Theme.accent : Theme.fg
       font.family: Theme.fontFamily
-      font.pixelSize: Style.font.icon
+      font.pixelSize: Style.font.icon // qmllint disable missing-property
     }
 
     MouseArea {
@@ -273,7 +273,7 @@ CursorSurface {
       text: root.danger ? "\uDB80\uDDB4" : "\uDB80\uDC6F"
       color: actionMouse.containsMouse && root.danger ? Theme.urgent : Theme.fg
       font.family: Theme.fontFamily
-      font.pixelSize: Style.font.icon
+      font.pixelSize: Style.font.icon // qmllint disable missing-property
     }
 
     MouseArea {
@@ -313,7 +313,7 @@ CursorSurface {
         text: root.noticeTitle
         color: Theme.accent
         font.family: Theme.fontFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Theme.body
         font.bold: true
       }
 
@@ -326,7 +326,7 @@ CursorSurface {
         text: root.noticeDetail
         color: Theme.fg
         font.family: Theme.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Theme.caption
       }
     }
   }

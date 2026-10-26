@@ -63,7 +63,7 @@ CursorSurface {
       text: root.title
       color: Theme.fg
       font.family: Theme.fontFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Theme.body
       font.bold: true
     }
     Text {
@@ -74,7 +74,7 @@ CursorSurface {
       text: root.subtitle
       color: Theme.dim
       font.family: Theme.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Theme.caption
     }
   }
 
@@ -137,7 +137,7 @@ CursorSurface {
       anchors.verticalCenter: parent.verticalCenter
       text: "Play"
       bordered: true
-      fontSize: Style.font.caption
+      fontSize: Theme.caption
       foreground: Theme.fg
       fontFamily: Theme.fontFamily
       tooltipText: "Play this sound"
