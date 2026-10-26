@@ -68,7 +68,11 @@ ensure_store() {
   chmod 600 "$archive" "$trash" "$settings_file" "$seen_file" 2>/dev/null || true
 }
 
-now_ms() { printf '%s' "$(($(date +%s%N) / 1000000))"; }
+# YANC_NOW_MS pins the clock (tests only).
+now_ms() {
+  if [[ ${YANC_NOW_MS:-} =~ ^[0-9]+$ ]]; then printf '%s' "$YANC_NOW_MS"
+  else printf '%s' "$(($(date +%s%N) / 1000000))"; fi
+}
 
 load_runtime_limits() {
   [[ -f $settings_file ]] || return 0
@@ -280,76 +284,59 @@ filter_jsonl() {
 
 prune() {
   load_runtime_limits
-  local cutoff trash_cutoff kept overflow now count limit
+  local cutoff trash_cutoff now limit tagged key
 
-  cutoff=$(( $(now_ms) - keep_days * 86400000 ))
-  trash_cutoff=$(( $(now_ms) - trash_days * 86400000 ))
   now=$(now_ms)
+  cutoff=$(( now - keep_days * 86400000 ))
+  trash_cutoff=$(( now - trash_days * 86400000 ))
+  limit=$history_limit
+  (( limit < 1 )) && limit=1
 
   if [[ -s $archive ]]; then
-    # Drop entries older than keepDays (past retention — gone for good).
-    if kept=$(jq -Rc --argjson cutoff "$cutoff" \
-        'fromjson? // empty | select((.timestamp // 0) >= $cutoff)' "$archive" 2>/dev/null); then
-      kept=$(printf '%s
-' "$kept" | grep -v '^$' || true)
-
-      # Cap History at displayLimit: oldest overflow goes to Trash, not a
-      # hidden archive slice. Newest stay in History.
-      count=$(printf '%s
-' "$kept" | grep -c . || true)
-      limit=$history_limit
-      (( limit < 1 )) && limit=1
-      if (( count > limit )); then
-        overflow=$(printf '%s
-' "$kept" | head -n $(( count - limit )))
-        kept=$(printf '%s
-' "$kept" | tail -n "$limit")
-        while IFS= read -r line; do
-          [[ -n $line ]] || continue
-          printf '%s
-' "$line" | jq -c --argjson trashedAt "$now" '. + {trashedAt: $trashedAt}' >> "$trash"
-        done <<< "$overflow"
-      fi
-
-      # Absolute ceiling: if still over maxItems, trash oldest again.
-      count=$(printf '%s
-' "$kept" | grep -c . || true)
-      if (( count > max_items )); then
-        overflow=$(printf '%s
-' "$kept" | head -n $(( count - max_items )))
-        kept=$(printf '%s
-' "$kept" | tail -n "$max_items")
-        while IFS= read -r line; do
-          [[ -n $line ]] || continue
-          printf '%s
-' "$line" | jq -c --argjson trashedAt "$now" '. + {trashedAt: $trashedAt}' >> "$trash"
-        done <<< "$overflow"
-      fi
-
-      printf '%s
-' "$kept" | grep -v '^$' > "$archive.tmp" || : > "$archive.tmp"
-      mv -f "$archive.tmp" "$archive"
+    # One jq pass over History, in file order:
+    # - entries older than keepDays are dropped for good;
+    # - History keeps the newest displayLimit (and never more than maxItems);
+    #   the oldest overflow goes to Trash with trashedAt = now.
+    # Lines are tagged "A\t" (stay) / "T\t" (to Trash); compact JSON never
+    # contains a raw tab. If jq fails nothing is written.
+    tagged=$(jq -Rnr --argjson cutoff "$cutoff" --argjson limit "$limit" \
+        --argjson max "$max_items" --argjson now "$now" '
+      [inputs | fromjson? // empty | select((.timestamp // 0) >= $cutoff)] as $kept
+      | ([$limit, $max] | min | if . < 0 then 0 else . end) as $cap
+      | ([($kept | length) - $cap, 0] | max) as $drop
+      | ($kept[:$drop][] | "T\t" + (. + {trashedAt: $now} | tojson)),
+        ($kept[$drop:][] | "A\t" + tojson)
+    ' "$archive" 2>/dev/null) || return 1
+    # New History first, so a failed write changes nothing; then Trash.
+    if ! printf '%s\n' "$tagged" | sed -n 's/^A\t//p' > "$archive.tmp"; then
+      rm -f "$archive.tmp"; return 1
     fi
+    if [[ $tagged == *$'T\t'* ]] \
+        && ! printf '%s\n' "$tagged" | sed -n 's/^T\t//p' >> "$trash"; then
+      rm -f "$archive.tmp"; return 1
+    fi
+    mv -f "$archive.tmp" "$archive" || { rm -f "$archive.tmp"; return 1; }
   fi
 
   if [[ -s $trash ]]; then
-    if kept=$(jq -Rc --argjson cutoff "$trash_cutoff" \
-        'fromjson? // empty | select((.trashedAt // .timestamp // 0) >= $cutoff)' "$trash" 2>/dev/null); then
-      local dropped
-      dropped=$(comm -23 \
-        <(jq -r '.key // empty' "$trash" 2>/dev/null | sort -u) \
-        <(printf '%s
-' "$kept" | jq -r 'select(.key) | .key' 2>/dev/null | sort -u))
-      printf '%s
-' "$kept" | grep -v '^$' > "$trash.tmp" || : > "$trash.tmp"
-      mv -f "$trash.tmp" "$trash"
-      local key
-      while IFS= read -r key; do
-        [[ -n $key ]] || continue
-        drop_images "$key"
-      done <<< "$dropped"
+    # One jq pass over Trash: keep entries newer than trashDays, list the keys
+    # that are gone (no kept entry with that key) so their pictures go too.
+    tagged=$(jq -Rnr --argjson cutoff "$trash_cutoff" '
+      [inputs | fromjson? // empty] as $all
+      | ($all | map(select((.trashedAt // .timestamp // 0) >= $cutoff))) as $kept
+      | ($kept | map(.key // empty | tostring) | unique) as $keep
+      | ($kept[] | "A\t" + tojson),
+        ($all | map(.key // empty | tostring) | unique - $keep | .[] | "D\t" + .)
+    ' "$trash" 2>/dev/null) || return 1
+    if ! printf '%s\n' "$tagged" | sed -n 's/^A\t//p' > "$trash.tmp" \
+        || ! mv -f "$trash.tmp" "$trash"; then
+      rm -f "$trash.tmp"; return 1
     fi
+    while IFS= read -r key; do
+      [[ -n $key ]] && drop_images "$key"
+    done < <(printf '%s\n' "$tagged" | sed -n 's/^D\t//p')
   fi
+  return 0
 }
 
 

@@ -1,0 +1,7 @@
+not json
+
+null
+{"key":"u1","app":"App","appIcon":"","summary":"Привіт \"quoted\" \\ tab\there 🎉","body":"","urgency":1,"timestamp":1789999700000}
+{"key":"nots","app":"x"}
+{"key":"u2","app":"App","appIcon":"","summary":"msg u2","body":"","urgency":1,"timestamp":1789999760000}
+{"key":"u3","timestamp":1789999820000,"nested":{"a":[1,2,{"b":null}]}}
