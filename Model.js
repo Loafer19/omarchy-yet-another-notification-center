@@ -353,3 +353,64 @@ function settingRows(cfg, filter, apps) {
   add({ key: "badge", kind: "enum", title: "Unread mark", subtitle: "On the bar bell", optionSet: "badge", currentValue: String(c.badge || DEFAULTS.badge) })
   return rows
 }
+
+// --- actions -----------------------------------------------------------------
+// Every store/helper call is checked: a non-zero exit code or {"ok":false}
+// on stdout is a failure. The error text is the backend's "error" field, else
+// the last stderr line, else the exit code.
+var ACTION_LABELS = {
+  "dismiss": "Couldn't move to Trash",
+  "restore": "Couldn't restore",
+  "purge": "Couldn't delete",
+  "clear": "Couldn't clear History",
+  "empty-trash": "Couldn't empty Trash",
+  "settings-set": "Couldn't save the setting",
+  "prune": "Couldn't apply the limits",
+  "seen": "Couldn't save the read mark",
+  "play-sound": "Couldn't play the sound",
+  "dnd": "Couldn't change Do Not Disturb",
+  "dismiss-toasts": "Couldn't hide the toasts",
+  "load": "Couldn't read the archive",
+  "copy": "Couldn't copy",
+  "open": "Couldn't open"
+}
+
+function lastLine(text) {
+  var lines = String(text || "").split("\n")
+  var i
+  for (i = lines.length - 1; i >= 0; i--) {
+    var s = lines[i].replace(/^\s+|\s+$/g, "")
+    if (s) return s
+  }
+  return ""
+}
+
+function actionResult(exitCode, stdout, stderr) {
+  var data = null
+  var line = lastLine(stdout)
+  if (line) {
+    try { data = JSON.parse(line) } catch (e) { data = null }
+  }
+  var err = ""
+  if (data && typeof data === "object" && !Array.isArray(data) && data.ok === false)
+    err = String(data.error || "failed")
+  var code = Number(exitCode)
+  if (!err && code !== 0)
+    err = lastLine(stderr) || (isFinite(code) ? "exit code " + code : "did not run")
+  if (err.length > 160) err = err.slice(0, 159) + "…"
+  return { ok: err === "", error: err, data: data }
+}
+
+function actionMessage(action, error) {
+  var label = ACTION_LABELS[action] || ("Couldn't run " + String(action || "the action"))
+  var e = String(error || "")
+  return e ? label + ": " + e : label
+}
+
+// Text the copy button puts on the clipboard: body, else summary (trimmed).
+function copyTextFor(row) {
+  var r = row || {}
+  var text = String(r.body || "").replace(/^\s+|\s+$/g, "")
+  if (!text) text = String(r.summary || "").replace(/^\s+|\s+$/g, "")
+  return text
+}

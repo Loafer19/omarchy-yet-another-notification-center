@@ -24,8 +24,21 @@ history_limit=${YANC_HISTORY_LIMIT:-50}
 trash_days=${YANC_TRASH_DAYS:-30}
 previews=${YANC_PREVIEWS:-1}
 
+# Failures print {"ok":false,"error":"…"} on stdout and exit 1; the panel shows
+# the error. Works without jq too (that is one of the errors).
+json_string() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$1" | jq -Rs .
+  else
+    local s=${1//\\/\\\\}
+    s=${s//\"/\\\"}
+    printf '"%s"' "${s//[$'\t\r\n']/ }"
+  fi
+}
+
 die() {
-  printf '{"ok":false,"error":%s}\n' "$(printf '%s' "$1" | jq -Rs .)"
+  printf '{"ok":false,"error":%s}\n' "$(json_string "$1")"
+  printf 'yoyo.notification-center: %s\n' "$1" >&2
   exit 1
 }
 
@@ -402,101 +415,112 @@ take_line() {
   jq -Rc --arg key "$key" 'fromjson? // empty | select(.key == $key)' "$src" 2>/dev/null | head -n 1
 }
 
+# Rewrite SRC without KEY. Returns 1 (SRC untouched) if jq or the write fails,
+# so a failed write can never empty the file.
 strip_key() {
   local src=$1 key=$2
-  jq -Rc --arg key "$key" 'fromjson? // empty | select(.key != $key)' "$src" 2>/dev/null \
-    | grep -v '^$' > "$src.tmp" || : > "$src.tmp"
-  mv -f "$src.tmp" "$src"
+  jq -Rc --arg key "$key" 'fromjson? // empty | select(.key != $key)' "$src" > "$src.tmp" 2>/dev/null \
+    && mv -f "$src.tmp" "$src" && return 0
+  rm -f "$src.tmp"
+  return 1
 }
 
+# Each move writes the destination first and only then removes the source,
+# and stops at the first failure: worst case an entry is in both lists,
+# never in neither. Exit 2 = key not found, 1 = I/O failure.
 dismiss_key() {
   local key=$1 line now
   line=$(take_line "$archive" "$key")
-  [[ -n $line ]] || return 1
+  [[ -n $line ]] || return 2
   now=$(now_ms)
-  printf '%s\n' "$line" | jq -c --argjson trashedAt "$now" '. + {trashedAt: $trashedAt}' >> "$trash"
+  printf '%s\n' "$line" | jq -c --argjson trashedAt "$now" '. + {trashedAt: $trashedAt}' >> "$trash" || return 1
   strip_key "$archive" "$key"
-  return 0
 }
 
 restore_key() {
   local key=$1 line
   line=$(take_line "$trash" "$key")
-  [[ -n $line ]] || return 1
-  printf '%s\n' "$line" | jq -c 'del(.trashedAt)' >> "$archive"
+  [[ -n $line ]] || return 2
+  printf '%s\n' "$line" | jq -c 'del(.trashedAt)' >> "$archive" || return 1
   strip_key "$trash" "$key"
-  return 0
 }
 
 purge_key() {
   local key=$1
-  have_key_in "$trash" "$key" || return 1
-  strip_key "$trash" "$key"
+  have_key_in "$trash" "$key" || return 2
+  strip_key "$trash" "$key" || return 1
   drop_images "$key"
-  return 0
 }
 
 clear_all() {
-  local now line
+  local now
   now=$(now_ms)
-  while IFS= read -r line; do
-    [[ -n $line ]] || continue
-    printf '%s\n' "$line" | jq -c --argjson trashedAt "$now" '. + {trashedAt: $trashedAt}' >> "$trash"
-  done < "$archive"
+  [[ -s $archive ]] || return 0
+  jq -Rc --argjson trashedAt "$now" 'fromjson? // empty | objects | . + {trashedAt: $trashedAt}' \
+    "$archive" > "$archive.trashing" 2>/dev/null || { rm -f "$archive.trashing"; return 1; }
+  cat "$archive.trashing" >> "$trash" || { rm -f "$archive.trashing"; return 1; }
+  rm -f "$archive.trashing"
   : > "$archive"
 }
 
 empty_trash() {
-  local key
+  local key keys
+  keys=$(jq -Rr 'fromjson? // empty | .key // empty' "$trash" 2>/dev/null) || return 1
+  : > "$trash" || return 1
   while IFS= read -r key; do
     [[ -n $key ]] || continue
     drop_images "$key"
-  done < <(jq -r 'fromjson? // empty | .key' "$trash" 2>/dev/null)
-  : > "$trash"
+  done <<< "$keys"
 }
 
 cmd_dismiss() {
   ensure_store
   local key=${1:-}
   valid_key "$key" || die "dismiss needs a key"
-  if with_lock dismiss_key "$key"; then
-    printf '{"ok":true,"dismissed":%s}\n' "$(printf '%s' "$key" | jq -Rs .)"
-  else
-    die "not in history"
-  fi
+  local rc=0
+  with_lock dismiss_key "$key" || rc=$?
+  case $rc in
+    0) printf '{"ok":true,"dismissed":%s}\n' "$(json_string "$key")" ;;
+    2) die "not in history" ;;
+    *) die "cannot write $store" ;;
+  esac
 }
 
 cmd_restore() {
   ensure_store
   local key=${1:-}
   valid_key "$key" || die "restore needs a key"
-  if with_lock restore_key "$key"; then
-    printf '{"ok":true,"restored":%s}\n' "$(printf '%s' "$key" | jq -Rs .)"
-  else
-    die "not in trash"
-  fi
+  local rc=0
+  with_lock restore_key "$key" || rc=$?
+  case $rc in
+    0) printf '{"ok":true,"restored":%s}\n' "$(json_string "$key")" ;;
+    2) die "not in trash" ;;
+    *) die "cannot write $store" ;;
+  esac
 }
 
 cmd_purge() {
   ensure_store
   local key=${1:-}
   valid_key "$key" || die "purge needs a key"
-  if with_lock purge_key "$key"; then
-    printf '{"ok":true,"purged":%s}\n' "$(printf '%s' "$key" | jq -Rs .)"
-  else
-    die "not in trash"
-  fi
+  local rc=0
+  with_lock purge_key "$key" || rc=$?
+  case $rc in
+    0) printf '{"ok":true,"purged":%s}\n' "$(json_string "$key")" ;;
+    2) die "not in trash" ;;
+    *) die "cannot write $store" ;;
+  esac
 }
 
 cmd_clear() {
   ensure_store
-  with_lock clear_all
+  with_lock clear_all || die "cannot write $store"
   printf '{"ok":true,"cleared":true}\n'
 }
 
 cmd_empty_trash() {
   ensure_store
-  with_lock empty_trash
+  with_lock empty_trash || die "cannot write $store"
   printf '{"ok":true,"emptied":true}\n'
 }
 
@@ -505,7 +529,7 @@ cmd_seen() {
   local stamp
   if [[ $# -gt 0 && -n ${1:-} ]]; then
     [[ ${1:-} =~ ^[0-9]{1,16}$ ]] || die "seen needs a millisecond stamp"
-    printf '%s\n' "$1" > "$seen_file"
+    printf '%s\n' "$1" > "$seen_file" || die "cannot write $seen_file"
     printf '{"ok":true,"seen":%s}\n' "$1"
     return
   fi
@@ -535,7 +559,7 @@ cmd_settings_set() {
   [[ -n $patch ]] || die "settings-set needs JSON"
   (( ${#patch} <= 32768 )) || die "settings patch too large"
   printf '%s' "$patch" | jq -e . >/dev/null 2>&1 || die "invalid JSON"
-  with_lock merge_settings "$patch"
+  with_lock merge_settings "$patch" || die "cannot save settings"
   cmd_settings_get
 }
 
@@ -580,7 +604,9 @@ merge_settings() {
         showBody: as_bool($patch.showBody // $cur.showBody; true),
         showPreview: as_bool($patch.showPreview // $cur.showPreview; true)
       }
-  ' "$settings_file" > "$settings_file.tmp" && mv -f "$settings_file.tmp" "$settings_file"
+  ' "$settings_file" > "$settings_file.tmp" 2>/dev/null && mv -f "$settings_file.tmp" "$settings_file" && return 0
+  rm -f "$settings_file.tmp"
+  return 1
 }
 
 cmd_apps() {
@@ -689,7 +715,7 @@ case ${1:-} in
   apps) shift; cmd_apps ;;
   play-sound) shift; cmd_play_sound "${1:-message}" ;;
   seed) shift; cmd_seed "${1:-16}" ;;
-  prune) shift; ensure_store; with_lock prune; printf '{"ok":true,"pruned":true}\n' ;;
+  prune) shift; ensure_store; with_lock prune || die "cannot write $store"; printf '{"ok":true,"pruned":true}\n' ;;
   *)
     cat >&2 <<'USAGE'
 yoyo.notification-center store

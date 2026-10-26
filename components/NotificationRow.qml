@@ -52,6 +52,12 @@ CursorSurface {
     }
   }
 
+  function copyFinished(ok, error) {
+    root.copied = ok === true
+    if (ok === true) root.showNotice("Copied", "")
+    else root.showNotice("Copy failed", String(error || ""))
+  }
+
   function showNotice(title, detail) {
     root.noticeTitle = String(title || "")
     root.noticeDetail = String(detail || "")
@@ -238,11 +244,8 @@ CursorSurface {
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onContainsMouseChanged: if (containsMouse) root.rowHovered()
-      onClicked: {
-        root.copied = true
-        root.showNotice("Copied", "")
-        root.copyClicked()
-      }
+      // "Copied" only once wl-copy has succeeded (see copyFinished).
+      onClicked: root.copyClicked()
     }
 
     PanelToolTip {

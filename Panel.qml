@@ -144,6 +144,9 @@ Panel {
     function onEntryAdded(entry) {
       if (root.opened && store) store.markSeen()
     }
+    // Failed store/helper calls show in the footer (it only takes space while
+    // a message is up) and are already logged by the service.
+    function onActionFailed(action, message) { statusFooter.flash(message, "error") }
   }
 
   readonly property var historyView: Model.visibleEntries(entries, filter, historyFilter)
@@ -391,9 +394,11 @@ Panel {
     }
     if (action === "Auto" && Model.isStoreImage(row.preview || row.file)) {
       var openPath = Model.storeImageUrl(row.preview || row.file).replace(/^file:\/\//, "")
-      if (openPath && openPath.charAt(0) === "/" && openPath.indexOf("..") < 0)
-        Quickshell.execDetached(["xdg-open", openPath])
-      root.close()
+      if (!openPath || openPath.charAt(0) !== "/" || openPath.indexOf("..") >= 0) {
+        root.flashNotice(list, index, "Can't open", who)
+        return
+      }
+      root.openPicture(list, index, who, openPath)
       return
     }
     if (!root.omarchyPath) {
@@ -410,12 +415,39 @@ Panel {
     focusProc.running = true
   }
 
-  function copyRow(row) {
-    if (!row) return
-    var text = String(row.body || "").replace(/^\s+|\s+$/g, "")
-    if (!text) text = String(row.summary || "").replace(/^\s+|\s+$/g, "")
+  // xdg-open may stay up as long as the viewer does: close the panel once it
+  // has run for a moment or exited cleanly; a quick non-zero exit keeps the
+  // panel open and says so on the row.
+  property var pendingOpen: null
+  Timer {
+    id: openSettle
+    interval: 700
+    onTriggered: if (root.pendingOpen) { root.pendingOpen.settled = true; root.close() }
+  }
+
+  function openPicture(list, index, who, path) {
+    if (!store) return
+    var token = { settled: false }
+    root.pendingOpen = token
+    openSettle.restart()
+    store.run("open", ["xdg-open", path], function(res) {
+      if (root.pendingOpen === token) { root.pendingOpen = null; openSettle.stop() }
+      if (res.ok) {
+        if (!token.settled) root.close()
+        return
+      }
+      if (!token.settled) root.flashNotice(list, index, "Can't open", who)
+    })
+  }
+
+  function copyRow(list, index, row) {
+    if (!row || !store) return
+    var text = Model.copyTextFor(row)
     if (!text) return
-    Quickshell.execDetached(["bash", "-c", "printf %s " + Util.shellQuote(text) + " | wl-copy"])
+    store.run("copy", ["wl-copy", "--", text], function(res) {
+      var wrap = list && list.itemAtIndex ? list.itemAtIndex(index) : null
+      if (wrap && wrap.copyFinished) wrap.copyFinished(res.ok, res.error)
+    })
   }
 
   function dismissRow(row) { if (store && row) store.dismiss(row.key) }
@@ -630,7 +662,7 @@ Panel {
         anchors.topMargin: root.edgeMargin
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.bottom: statusFooter.top
 
         ListView {
           id: historyList
@@ -646,6 +678,7 @@ Panel {
             width: ListView.view.width
             height: historyCard.implicitHeight
             function showNotice(title, detail) { historyCard.showNotice(title, detail) }
+            function copyFinished(ok, error) { historyCard.copyFinished(ok, error) }
 
             Yanc.NotificationRow {
               id: historyCard
@@ -668,7 +701,7 @@ Panel {
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "history" && root.selectedIndex === historyWrap.index
               onRowHovered: root.setRowCursor(historyWrap.index)
               onRowClicked: root.activateAt(historyList, historyWrap.index, historyWrap.modelData)
-              onCopyClicked: root.copyRow(historyWrap.modelData)
+              onCopyClicked: root.copyRow(historyList, historyWrap.index, historyWrap.modelData)
               onActionClicked: root.dismissRow(historyWrap.modelData)
             }
           }
@@ -699,6 +732,8 @@ Panel {
             required property var modelData
             width: ListView.view.width
             height: trashCard.implicitHeight
+            function showNotice(title, detail) { trashCard.showNotice(title, detail) }
+            function copyFinished(ok, error) { trashCard.copyFinished(ok, error) }
             Yanc.NotificationRow {
               id: trashCard
               width: parent.width
@@ -719,7 +754,7 @@ Panel {
               hasCursor: root.cursorActive && root.focusSection === "rows" && root.activeTab === "trash" && root.selectedIndex === trashWrap.index
               onRowHovered: root.setRowCursor(trashWrap.index)
               onRowClicked: root.restoreRow(trashWrap.modelData)
-              onCopyClicked: root.copyRow(trashWrap.modelData)
+              onCopyClicked: root.copyRow(trashList, trashWrap.index, trashWrap.modelData)
               onActionClicked: root.restoreRow(trashWrap.modelData)
             }
           }
@@ -799,6 +834,16 @@ Panel {
           visible: root.activeTab === "settings" && root.settingsFilter === "apps" && settingsView.length === 0
           title: "No apps in the archive yet"
         }
+      }
+
+      // Takes no space unless a failure is being shown (clears after 6 s).
+      StatusFooter {
+        id: statusFooter
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: statusText !== ""
+        height: visible ? implicitHeight : 0
       }
     }
   }
