@@ -152,6 +152,33 @@ rmdir "$store/seen"
 out=$(PATH=/usr/bin/nonexistent:/nonexistent "$(command -v bash)" "$backend" list 2>/dev/null); rc=$?
 expect "missing jq -> exit 1 with JSON error (no jq needed)" "$rc $out" '1 {"ok":false,"error":"jq is not installed"}'
 
+echo "== error paths"
+err() { # err NAME WANT CMD... — CMD must exit 1 and print {"ok":false,"error":WANT}
+  local name=$1 want=$2 out rc; shift 2
+  out=$("$@" 2>/dev/null); rc=$?
+  expect "$name" "$rc $out" "1 $(jq -nc --arg e "$want" '{ok:false,error:$e}')"
+}
+err "restore bad key refused" "restore needs a key" B restore '../x'
+err "purge bad key refused" "purge needs a key" B purge ''
+err "settings-set without JSON" "settings-set needs JSON" B settings-set
+err "settings-set patch too large" "settings patch too large" \
+  B settings-set "{\"badge\":\"$(printf '%*s' 32800 '' | tr ' ' x)\"}"
+err "unknown engine refused" "unknown engine: nope" B sync nope
+err "watch with an unknown engine refused" "unknown engine: nope" B watch nope
+: > "$tmp/not-a-dir"
+err "store that cannot be created" "cannot create $tmp/not-a-dir/store" \
+  env YANC_STORE="$tmp/not-a-dir/store" bash "$backend" list
+mkdir -p "$tmp/nodefaults/scripts"; cp -r "$here/../scripts/." "$tmp/nodefaults/scripts/"
+err "defaults.js missing" "defaults.js is missing" bash "$tmp/nodefaults/scripts/backend.sh" list
+# watch without inotifywait: a PATH with everything in /usr/bin but it.
+noino=$tmp/noino; mkdir -p "$noino"
+for f in /usr/bin/*; do [[ ${f##*/} == inotifywait ]] || ln -s "$f" "$noino/" 2>/dev/null; done
+err "watch without inotifywait" "inotifywait is not installed" \
+  env PATH="$noino" YANC_SRC_DIR="$tmp/noino-src" YANC_STORE="$tmp/noino-store" bash "$backend" watch
+out=$(B bogus 2>&1); rc=$?
+expect "unknown command -> usage, exit 64" "$rc $(head -n 1 <<< "$out")" "64 yoyo.notification-center store"
+expect "no command -> usage, exit 64" "$(B >/dev/null 2>&1; echo $?)" 64
+
 echo "== seen / unread"
 expect "seen default" "$(B seen)" '{"ok":true,"seen":0}'
 expect "unread = all" "$(B unread)" '{"ok":true,"unread":4}'
