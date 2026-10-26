@@ -129,6 +129,7 @@ function rowFor(entry, nowMs) {
     preview: String(e.preview || ""),
     file: String(e.file || ""),
     glyph: String(e.glyph || ""),
+    link: safeLink(e.link),
     urgency: (e.urgency === undefined || e.urgency === null) ? 1 : Number(e.urgency),
     timestamp: Number(e.timestamp || 0),
     trashedAt: Number(e.trashedAt || 0),
@@ -158,6 +159,118 @@ function storeImageUrl(value) {
   var rest = s.slice(at + marker.length)
   if (!rest || rest.indexOf("/") >= 0) return ""
   return "file://" + s
+}
+
+// A web address the panel may hand to xdg-open: http(s) only, a plain host,
+// nothing that could be read as an option or a second argument.
+function safeLink(value) {
+  var s = String(value || "")
+  if (!s || s.length > 2048) return ""
+  if (/[\x00-\x20\x7f-\x9f"'<>\\`]/.test(s)) return ""
+  if (!/^https?:\/\/[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*(:[0-9]{1,5})?([\/?#].*)?$/.test(s)) return ""
+  return s
+}
+
+// --- Omarchy 4.5: pictures of live toasts -----------------------------------
+// history.json keeps no pictures, so the panel draws a toast's picture once
+// while the toast is up and saves it (backend.sh capture). Omapager's
+// Security.localImagePath, ported: the image-path hint as Quickshell hands it
+// over (image://icon//path) or a file:// URL, one spelling per file, never
+// kernel interfaces or other services' runtime state.
+function localImagePath(raw) {
+  var text = typeof raw === "string" && raw.length <= 3072 ? raw : ""
+  if (text.indexOf("image://icon/") === 0) text = text.slice("image://icon/".length)
+  if (/^file:\/\//i.test(text)) {
+    if (!/^file:\/\/\//i.test(text) || /[?#]/.test(text)) return ""
+    try { text = decodeURIComponent(text.slice("file://".length)) } catch (e) { return "" }
+  }
+  if (!text || text.length > 1024 || text.charAt(0) !== "/" || /[\x00-\x1f\x7f-\x9f]/.test(text)) return ""
+  var parts = text.slice(1).split("/")
+  for (var i = 0; i < parts.length; i++)
+    if (parts[i] === "" || parts[i] === "." || parts[i] === "..") return ""
+  if (/^\/(?:proc|sys|dev)(?:\/|$)/.test(text)) return ""
+  if (/^\/(?:var\/)?run(?:\/|$)/.test(text) && !/^\/run\/user\/[0-9]+\/./.test(text)) return ""
+  return text
+}
+
+// What to draw for a live notification's picture: Quickshell's in-process
+// image (inline image-data, valid only while the toast exists) or a local
+// file. A themed icon name (image://icon/name) is no picture. "" = nothing.
+function captureSource(image) {
+  var s = String(image || "")
+  if (/^image:\/\/qsimage\/[0-9]+\/[0-9]+$/.test(s)) return s
+  if (s.indexOf("image://icon/") === 0 && !/^image:\/\/icon\/(?:\/|file:)/i.test(s)) return ""
+  var p = localImagePath(s)
+  return p ? "file://" + p.split("/").map(encodeURIComponent).join("/") : ""
+}
+
+// Pixel size to save a w x h picture at: never upscaled, longest side <= max.
+function fitSize(w, h, max) {
+  w = Number(w) || 0; h = Number(h) || 0; max = Number(max) || 512
+  if (w <= 0 || h <= 0) return { width: 0, height: 0 }
+  var k = Math.min(1, max / Math.max(w, h))
+  return { width: Math.max(1, Math.round(w * k)), height: Math.max(1, Math.round(h * k)) }
+}
+
+// Omapager's placeholder for a secret-bearing notification (Store.redacted).
+function isRedacted(row) {
+  return !!row && row.summary === "Verification notification" && (row.body === "[redacted]" || row.bodyLine === "[redacted]")
+}
+
+// The persisted row for key in liveEntries / historyEntries, or null.
+function engineRow(key, live, history) {
+  var lists = [live || [], history || []]
+  for (var l = 0; l < lists.length; l++)
+    for (var i = 0; i < lists[l].length; i++)
+      if (lists[l][i] && String(lists[l][i].key) === String(key)) return lists[l][i]
+  return null
+}
+
+// Whether a captured picture for key may be saved: its row is known and is
+// not a redacted placeholder. "wait" while the engine has not stored it yet.
+function captureVerdict(key, live, history) {
+  if (!isSafeKey(key)) return "drop"
+  var row = engineRow(key, live, history)
+  if (!row) return "wait"
+  return isRedacted(row) ? "drop" : "save"
+}
+
+// Replace the entry with line's key (a JSON line from backend.sh capture) in
+// entries. Returns the new list, or null if nothing changed.
+function patchLine(entries, line) {
+  var entry
+  try { entry = JSON.parse(line) } catch (e) { return null }
+  if (!entry || typeof entry !== "object" || !isSafeKey(entry.key)) return null
+  var list = entries || []
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].key === entry.key) {
+      var next = list.slice()
+      next[i] = entry
+      return next
+    }
+  }
+  return null
+}
+
+// A sender's D-Bus action is only there while its notification is: the
+// live notification object's actions, as { id, text }.
+function liveActions(ref) {
+  var out = []
+  if (!ref || !ref.actions) return out
+  var n = Math.min(Number(ref.actions.length) || 0, 8)
+  for (var i = 0; i < n; i++) {
+    var a = ref.actions[i]
+    var id = String((a && a.identifier) || "")
+    if (!id || id.length > 128) continue
+    out.push({ id: id, text: String((a && a.text) || id).slice(0, 64) })
+  }
+  return out
+}
+
+function hasLiveAction(ref, id) {
+  var list = liveActions(ref)
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return true
+  return false
 }
 
 function themedIconName(value) {
@@ -351,8 +464,7 @@ function settingRows(cfg, filter, apps, engine) {
   add({ key: "clickAction", kind: "enum", title: "Clicking a notification", subtitle: "Never runs the sender's command", optionSet: "clickAction", currentValue: String(c.clickAction || DEFAULTS.clickAction) })
   add({ key: "showBody", kind: "toggle", title: "Show the message text", subtitle: "Off leaves the sender and subject", checked: !!c.showBody })
   add({ key: "showPreview", kind: "toggle", title: "Show pictures",
-        subtitle: engine === "omapager" ? "Omarchy 4.5 doesn't keep pictures; older ones still show"
-                                        : "Off stops keeping copies of new ones",
+        subtitle: "Off stops keeping copies of new ones",
         checked: !!c.showPreview })
   add({ key: "badge", kind: "enum", title: "Unread mark", subtitle: "On the bar bell", optionSet: "badge", currentValue: String(c.badge || DEFAULTS.badge) })
   return rows
@@ -376,7 +488,8 @@ var ACTION_LABELS = {
   "dismiss-toasts": "Couldn't hide the toasts",
   "load": "Couldn't read the archive",
   "copy": "Couldn't copy",
-  "open": "Couldn't open"
+  "open": "Couldn't open",
+  "capture": "Couldn't save the picture"
 }
 
 function lastLine(text) {

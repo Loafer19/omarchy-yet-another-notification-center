@@ -77,6 +77,14 @@ BarWidget {
   }
 
   readonly property var panelItem: panelLoader.item
+
+  // Omarchy 4.5: where the service draws a live toast's picture to save it
+  // (Service.captureHost needs an item in a shown window). 0x0 and clipped,
+  // so nothing of it ever shows.
+  Item { id: captureHost; width: 0; height: 0; clip: true }
+  readonly property var storeRef: panelItem && panelItem.store ? panelItem.store : null
+  onStoreRefChanged: if (storeRef && storeRef.captureHost !== undefined && !storeRef.captureHost) storeRef.captureHost = captureHost
+  Component.onDestruction: if (storeRef && storeRef.captureHost === captureHost) storeRef.captureHost = null
   readonly property bool dnd: panelItem && panelItem.dnd ? true : false
   readonly property int unread: panelItem && panelItem.unread ? panelItem.unread : 0
   readonly property string badge: panelItem && panelItem.badge ? panelItem.badge : "Dot"

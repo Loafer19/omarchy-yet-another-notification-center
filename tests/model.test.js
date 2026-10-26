@@ -152,7 +152,7 @@ eq("actionResult caps long errors", M.actionResult(1, "", "e".repeat(400)).error
 eq("actionMessage", [M.actionMessage("dismiss", "not in history"), M.actionMessage("weird", ""), M.actionMessage("clear", "")],
   ["Couldn't move to Trash: not in history", "Couldn't run weird", "Couldn't clear History"])
 eq("every action the QML runs has a label", ["dismiss", "restore", "purge", "clear", "empty-trash", "settings-set", "prune", "seen",
-  "play-sound", "dnd", "dismiss-toasts", "load", "copy", "open"].filter(a => !M.ACTION_LABELS[a]), [])
+  "play-sound", "dnd", "dismiss-toasts", "load", "copy", "open", "capture"].filter(a => !M.ACTION_LABELS[a]), [])
 const qml = ["Service.qml", "Panel.qml"].map(f => fs.readFileSync(path.join(dir, f), "utf8")).join("\n")
 eq("no fire-and-forget execDetached left in Service/Panel", (qml.match(/execDetached/g) || []).length, 0)
 eq("every run(\"…\") action has a label", [...qml.matchAll(/\brun\("([a-z-]+)"/g)].map(m => m[1]).filter(a => !M.ACTION_LABELS[a]), [])
@@ -226,8 +226,38 @@ eq("liveToastKey: same row, same toast", M.liveToastKey(live45[0]) === M.liveToa
 eq("settingRows: 4.0 wording unchanged", M.settingRows(M.DEFAULTS, "general", []).filter(r => r.key === "showPreview")[0].subtitle,
   "Off stops keeping copies of new ones")
 eq("settingRows: legacy engine = 4.0 wording", JSON.stringify(M.settingRows(M.DEFAULTS, "general", [], "legacy")), JSON.stringify(M.settingRows(M.DEFAULTS, "general", [])))
-eq("settingRows: 4.5 says pictures are not kept", M.settingRows(M.DEFAULTS, "general", [], "omapager").filter(r => r.key === "showPreview")[0].subtitle,
-  "Omarchy 4.5 doesn't keep pictures; older ones still show")
+eq("settingRows: 4.5 keeps pictures again (captured live)", M.settingRows(M.DEFAULTS, "general", [], "omapager").filter(r => r.key === "showPreview")[0].subtitle,
+  "Off stops keeping copies of new ones")
+
+// --- 4.5: live captures, links, actions ---------------------------------------
+eq("captureSource: inline image-data (qsimage)", M.captureSource("image://qsimage/12/3"), "image://qsimage/12/3")
+eq("captureSource: image-path hint", M.captureSource("image://icon//tmp/.org.chromium.Chromium.abc"), "file:///tmp/.org.chromium.Chromium.abc")
+eq("captureSource: file:// with spaces escaped", M.captureSource("file:///home/u/My%20Pics/a.png"), "file:///home/u/My%20Pics/a.png")
+eq("captureSource: themed icon is no picture", M.captureSource("image://icon/firefox"), "")
+eq("captureSource: refuses kernel/run/dotdot/relative/query", [
+  "image://icon//proc/self/environ", "/dev/zero", "/run/dbus/x", "/home/u/../etc/x", "a.png", "file://host/x.png",
+  "file:///tmp/a.png?x", "image://qsimage/a/b", "https://e.org/a.png", "/tmp//a.png"].map(M.captureSource), Array(10).fill(""))
+eq("captureSource: runtime dir allowed", M.captureSource("/run/user/1000/pic.png"), "file:///run/user/1000/pic.png")
+eq("fitSize: never upscales", plain(M.fitSize(64, 32, 512)), { width: 64, height: 32 })
+eq("fitSize: longest side capped", plain(M.fitSize(2000, 1000, 512)), { width: 512, height: 256 })
+eq("fitSize: empty", plain(M.fitSize(0, 10)), { width: 0, height: 0 })
+const red = { key: "r1", summary: "Verification notification", body: "[redacted]" }
+eq("captureVerdict: unknown yet -> wait", M.captureVerdict("k1", [], []), "wait")
+eq("captureVerdict: live row -> save", M.captureVerdict("k1", [{ key: "k1", summary: "a", body: "b" }], []), "save")
+eq("captureVerdict: closed row -> save", M.captureVerdict("k1", [], [{ key: "k1", summary: "a", body: "b" }]), "save")
+eq("captureVerdict: redacted -> drop", M.captureVerdict("r1", [red], []), "drop")
+eq("captureVerdict: bad key -> drop", M.captureVerdict("../x", [], []), "drop")
+eq("patchLine: replaces the entry", plain(M.patchLine([{ key: "a", image: "" }, { key: "b" }], '{"key":"a","image":"file:///x"}')),
+  [{ key: "a", image: "file:///x" }, { key: "b" }])
+eq("patchLine: unknown key / junk", [M.patchLine([{ key: "a" }], '{"key":"z"}'), M.patchLine([], "nope"), M.patchLine([], '{"key":"../a"}')], [null, null, null])
+eq("safeLink: http(s) kept", [M.safeLink("https://github.com/a/b?x=1#c"), M.safeLink("http://localhost:8080/")], ["https://github.com/a/b?x=1#c", "http://localhost:8080/"])
+eq("safeLink: everything else dropped", ["javascript:alert(1)", "file:///etc/passwd", "https://a b/", "-https://x.org", "https://x.org/'a",
+  "https://a..b/", "https://x.org/\n", "ftp://x.org/", "https://" + "a".repeat(2050)].map(M.safeLink), Array(9).fill(""))
+eq("rowFor: link sanitised", [M.rowFor({ key: "a", link: "https://x.org/" }, 0).link, M.rowFor({ key: "a", link: "javascript:1" }, 0).link, M.rowFor({ key: "a" }, 0).link],
+  ["https://x.org/", "", ""])
+const ref = { actions: [{ identifier: "default", text: "" }, { identifier: "reply", text: "Reply" }, { identifier: "", text: "x" }] }
+eq("liveActions: identifiers and labels", plain(M.liveActions(ref)), [{ id: "default", text: "default" }, { id: "reply", text: "Reply" }])
+eq("hasLiveAction", [M.hasLiveAction(ref, "default"), M.hasLiveAction(ref, "nope"), M.hasLiveAction(null, "default")], [true, false, false])
 
 console.log(`\npassed ${pass}, failed ${fail}`)
 process.exit(fail ? 1 : 0)

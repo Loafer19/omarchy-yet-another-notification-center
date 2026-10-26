@@ -40,6 +40,125 @@ Item {
 
   readonly property int unread: Model.unreadCount(entries, lastSeen)
 
+  // --- Omarchy 4.5: pictures and actions of live toasts ----------------------
+  // history.json keeps no pictures and a sender's actions die with its
+  // notification, so both are only there while the toast is. Omapager
+  // publishes the live Notification objects as refs (key -> object) and bumps
+  // refsRevision the moment one arrives, before it stores the row or lets a
+  // silenced one go. Then the picture is drawn once into captureHost (a 0x0
+  // clipped item in the bar's window: this service has none), grabbed, and
+  // saved as captures/KEY.png once the stored row shows it is not a redacted
+  // secret; `backend.sh capture KEY` files it.
+  property Item captureHost: null
+  readonly property string storeDir: {
+    var custom = Quickshell.env("YANC_STORE")
+    if (custom) return custom
+    var state = Quickshell.env("XDG_STATE_HOME")
+    return (state ? state : Quickshell.env("HOME") + "/.local/state") + "/omarchy/yoyo.notification-center"
+  }
+  property var captureSeen: ({})
+  property var captureShots: ({})
+  // Bumped when a live row's sender actions may have changed.
+  readonly property int liveRevision: root.engineService && root.engineService.refsRevision !== undefined
+    ? Number(root.engineService.refsRevision) : 0
+
+  function liveRef(key) {
+    var s = root.engineService
+    if (root.engine !== "omapager" || !s || !s.refs || !Model.isSafeKey(key)) return null
+    return s.refs[key] || null
+  }
+
+  // The sender's actions while its toast is up ([] after): { id, text }.
+  function liveActions(key, revision) {
+    return Model.liveActions(root.liveRef(key))
+  }
+
+  // Run a sender action of a live toast (D-Bus ActionInvoked, through
+  // Omapager, which then closes the toast). false when it is gone.
+  function invokeLive(key, id) {
+    var s = root.engineService
+    if (!s || typeof s.invokeAction !== "function") return false
+    if (!Model.hasLiveAction(root.liveRef(key), String(id))) return false
+    s.invokeAction(String(key), String(id))
+    return true
+  }
+
+  function captureLive() {
+    var s = root.engineService
+    if (root.engine !== "omapager" || !s || !s.refs) return
+    var refs = s.refs
+    var live = {}
+    for (var key in refs) {
+      live[key] = true
+      if (root.captureSeen[key]) continue
+      root.captureSeen[key] = true
+      if ((root.cfg || {}).showPreview === false || !root.captureHost || !Model.isSafeKey(key)) continue
+      var ref = refs[key]
+      var src = Model.captureSource(ref ? ref.image : "")
+      if (!src) continue
+      var shot = captureImage.createObject(root.captureHost, { key: key, source: src })
+      if (shot) shot.grab()
+    }
+    for (var old in root.captureSeen)
+      if (!live[old]) delete root.captureSeen[old]
+  }
+
+  // Save grabbed pictures whose rows are stored; drop redacted ones and any
+  // whose row never turned up.
+  function fileShots() {
+    var s = root.engineService
+    var now = Date.now()
+    for (var key in root.captureShots) {
+      var shot = root.captureShots[key]
+      var verdict = s ? Model.captureVerdict(key, s.liveEntries, s.historyEntries) : "drop"
+      if (verdict === "wait" && now - shot.at < 120000) continue
+      delete root.captureShots[key]
+      if (verdict !== "save") continue
+      if (!shot.result.saveToFile(root.storeDir + "/captures/" + key + ".png")) {
+        console.warn("yoyo.notification-center: could not save the picture of " + key)
+        continue
+      }
+      root.fileCapture(key)
+    }
+  }
+
+  function fileCapture(key) {
+    root.run("capture", root.storeCommand(["capture", key]), function(res) {
+      if (!res.ok || !res.data || res.data.key !== key) return
+      var next = Model.patchLine(root.entries, JSON.stringify(res.data))
+      if (next) { root.entries = next; root.entriesReset() }
+    })
+  }
+
+  Component {
+    id: captureImage
+    Image {
+      id: shot
+      property string key: ""
+      property bool grabbing: false
+      asynchronous: false
+      cache: false
+      smooth: true
+      fillMode: Image.PreserveAspectFit
+      function grab() {
+        if (shot.grabbing || shot.status === Image.Loading) return
+        shot.grabbing = true
+        var size = Model.fitSize(shot.implicitWidth, shot.implicitHeight, 512)
+        if (shot.status !== Image.Ready || !size.width) { shot.destroy(); return }
+        shot.width = size.width
+        shot.height = size.height
+        var key = shot.key
+        var started = shot.grabToImage(function(result) {
+          root.captureShots[key] = { result: result, at: Date.now() }
+          shot.destroy()
+          Qt.callLater(root.fileShots)
+        }, Qt.size(size.width, size.height))
+        if (!started) shot.destroy()
+      }
+      onStatusChanged: if (shot.status !== Image.Loading) shot.grab()
+    }
+  }
+
   readonly property string script:
     Qt.resolvedUrl("scripts/backend.sh").toString().replace(/^file:\/\//, "")
 
@@ -450,7 +569,10 @@ Item {
   Connections {
     target: root.engineService
     ignoreUnknownSignals: true
-    function onLiveEntriesChanged() { Qt.callLater(root.noteToasts) }
+    function onLiveEntriesChanged() { Qt.callLater(root.noteToasts); Qt.callLater(root.fileShots) }
+    function onHistoryEntriesChanged() { Qt.callLater(root.fileShots) }
+    // Synchronous on purpose: a silenced toast is let go right after.
+    function onRefsRevisionChanged() { root.captureLive() }
     function onDoNotDisturbChanged() {
       if (root.engineService) root.doNotDisturb = root.engineService.doNotDisturb === true
     }
@@ -548,6 +670,7 @@ Item {
     onTriggered: {
       root.refreshEngine()
       root.noteToasts()
+      for (var k in root.captureShots) { root.fileShots(); break }
     }
   }
 

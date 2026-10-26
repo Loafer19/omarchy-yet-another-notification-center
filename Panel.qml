@@ -347,6 +347,7 @@ Panel {
         return
       }
       if (!pending) return
+      if (root.openLink(pending.list, pending.index, pending.row)) return
       var wrap = pending.list && pending.list.itemAtIndex ? pending.list.itemAtIndex(pending.index) : null
       if (wrap && wrap.showNotice)
         wrap.showNotice("No window", root.noticeIdentity(pending.row))
@@ -380,11 +381,18 @@ Panel {
       root.openPicture(list, index, who, openPath)
       return
     }
+    // Omarchy 4.5, toast still up: what clicking the toast does for the
+    // sender (its "default" D-Bus action), which closes it like a click would.
+    if (action === "Auto" && store && typeof store.invokeLive === "function" && store.invokeLive(row.key, "default")) {
+      root.close()
+      return
+    }
     if (!root.omarchyPath) {
-      root.flashNotice(list, index, "Can't open", who)
+      if (!root.openLink(list, index, row)) root.flashNotice(list, index, "Can't open", who)
       return
     }
     if (!Model.isSafeAppName(row.app)) {
+      if (root.openLink(list, index, row)) return
       root.flashNotice(list, index, String(row.app || "").length ? "Can't open" : "No app to open", who)
       return
     }
@@ -402,6 +410,16 @@ Panel {
     id: openSettle
     interval: 700
     onTriggered: if (root.pendingOpen) { root.pendingOpen.settled = true; root.close() }
+  }
+
+  // The row's web address (Omarchy 4.5: from its text or the site a browser
+  // notification came from), when the app can't be focused. Auto only.
+  function openLink(list, index, row) {
+    if (String(cfg.clickAction || "Auto") !== "Auto") return false
+    var url = Model.safeLink(row ? row.link : "")
+    if (!url) return false
+    root.openPicture(list, index, root.noticeIdentity(row), url)
+    return true
   }
 
   function openPicture(list, index, who, path) {
