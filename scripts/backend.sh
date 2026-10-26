@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Store for yoyo.notification-center.
-# Reads Omarchy's popup/history files; never writes into those directories.
+# Reads Omarchy's notification files; never writes into those directories.
+# Two layouts:
+#   legacy   (Omarchy 4.0.x) one JSON file per notification in
+#            notifications/ (on screen) and notifications/history/
+#   omapager (Omarchy 4.5)   notifications/live.json (on screen, oldest first)
+#            and notifications/history.json (closed, newest first)
 
 set -uo pipefail
 umask 077
@@ -15,6 +20,9 @@ archive="$store/archive.jsonl"
 trash="$store/trash.jsonl"
 images="$store/images"
 seen_file="$store/seen"
+# omapager: the keys live.json/history.json held when we last read them, so a
+# row deleted from the archive (Empty Trash, purge) is not taken in again.
+ledger="$store/engine-keys"
 lock_file="$store/lock"
 settings_file="$store/settings.json"
 
@@ -277,6 +285,76 @@ sync_all() {
   done
 }
 
+# ---- Omarchy 4.5 (omapager) --------------------------------------------------
+# Rows carry key, app, appIcon (a theme name), summary, body, glyph, urgency
+# and ts (seconds). Pictures are never persisted there, so none are archived.
+engine_live="$src_dir/live.json"
+engine_history="$src_dir/history.json"
+
+engine_files_present() {
+  [[ -f $engine_history || -f $engine_live ]]
+}
+
+# Rows from FILE as compact JSON, oldest first. Anything but an array of
+# objects with a valid key is skipped; oversized files are not parsed.
+engine_rows() {
+  local file=$1 order=$2 size
+  [[ -s $file ]] || return 0
+  is_under "$file" "$src_dir" || return 0
+  size=$(stat -c%s -- "$file" 2>/dev/null || echo 0)
+  (( size > 0 && size <= 4194304 )) || return 0
+  jq -c --arg order "$order" '
+    if type == "array" then . else [] end
+    | map(select(type == "object" and (.key | type) == "string"
+                 and (.key | test("^[A-Za-z0-9._+-]{1,128}$"))))
+    | if $order == "newest-first" then reverse else . end
+    | .[]
+  ' "$file" 2>/dev/null || true
+}
+
+# Archive every row of live.json and history.json not seen before; print the
+# new entries. Known = archive + trash + the ledger. The ledger is then the
+# keys both files hold now, so it stays as small as they are.
+ingest_engine() {
+  local rows new
+  rows=$( { engine_rows "$engine_history" newest-first; engine_rows "$engine_live" oldest-first; } )
+  [[ -n $rows ]] || { : > "$ledger"; return 0; }
+  new=$(printf '%s\n' "$rows" | jq -nc \
+      --slurpfile have <( { jq -Rc 'fromjson? // empty | .key // empty | strings' "$archive" "$trash" 2>/dev/null
+                           cat "$ledger" 2>/dev/null | jq -Rc 'select(length > 0)'; } ) '
+    def icon: tostring | if test("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$") and (contains("..") | not)
+                         then . else "" end;
+    def ms: (tonumber? // 0) | if . > 0 then (. * 1000 | round) else 0 end;
+    reduce inputs as $r ({k: ($have | map({(.): true}) | add // {}), out: []};
+      if .k[$r.key] then . else .k[$r.key] = true | .out += [$r] end)
+    | .out[]
+    | {
+        key: .key,
+        app: ((.app // "") | tostring | .[0:64]),
+        appIcon: ((.appIcon // "") | icon),
+        summary: ((.summary // "") | tostring | .[0:240]),
+        body: ((.body // "") | tostring | .[0:500]),
+        image: "",
+        preview: "",
+        file: "",
+        glyph: ((.glyph // "") | tostring | .[0:8]),
+        urgency: (if (.urgency | tonumber? // 1) >= 2 then 2
+                  elif (.urgency | tonumber? // 1) <= 0 then 0
+                  else 1 end),
+        timestamp: (((.ts // 0) | ms) as $t
+                    | if $t > 0 then $t else ((.closed_ts // 0) | ms) end)
+      }
+  ') || return 1
+  if [[ -n $new ]]; then
+    printf '%s\n' "$new" >> "$archive" || return 1
+  fi
+  if ! { printf '%s\n' "$rows" | jq -r '.key' > "$ledger.tmp" 2>/dev/null && mv -f "$ledger.tmp" "$ledger"; }; then
+    rm -f "$ledger.tmp"
+  fi
+  [[ -n $new ]] && printf '%s\n' "$new"
+  return 0
+}
+
 filter_jsonl() {
   local src=$1 pred=$2
   jq -Rc "$pred" "$src" 2>/dev/null || true
@@ -341,8 +419,11 @@ prune() {
 
 
 quiet=0
+engine=legacy
 sync_and_prune() {
-  if (( quiet )); then sync_all >/dev/null; else sync_all; fi
+  local sync=sync_all
+  [[ $engine == omapager ]] && sync=ingest_engine
+  if (( quiet )); then "$sync" >/dev/null; else "$sync"; fi
   prune
 }
 
@@ -351,14 +432,39 @@ cmd_sync() {
   with_lock sync_and_prune
 }
 
+# legacy | omapager | auto (omapager when its files are there). The panel
+# passes what the running Omarchy service is; auto is its fallback.
+set_engine() {
+  case ${1:-legacy} in
+    legacy|"") engine=legacy ;;
+    omapager) engine=omapager ;;
+    auto) if engine_files_present; then engine=omapager; else engine=legacy; fi ;;
+    *) die "unknown engine: $1" ;;
+  esac
+}
+
 ingest_one() {
   ingest_file "$1" 1
   prune
 }
 
+ingest_engine_one() {
+  ingest_engine
+  prune
+}
+
 cmd_watch() {
+  set_engine "${1:-legacy}"
   ensure_store
-  mkdir -p "$src_dir" "$src_history"
+  local -a dirs
+  if [[ $engine == omapager ]]; then
+    # 4.5 keeps everything in two files; never recreate the old history/.
+    mkdir -p "$src_dir"
+    dirs=("$src_dir")
+  else
+    mkdir -p "$src_dir" "$src_history"
+    dirs=("$src_dir" "$src_history")
+  fi
   quiet=1
   cmd_sync
 
@@ -377,7 +483,7 @@ cmd_watch() {
     deathsig=(setpriv --pdeathsig TERM --)
   fi
   exec 3< <(exec "${deathsig[@]}" inotifywait -m -q -e close_write -e moved_to --format '%w%f' \
-    "$src_dir" "$src_history" 2>/dev/null)
+    "${dirs[@]}" 2>/dev/null)
   watcher=$!
   if (( ${#deathsig[@]} == 0 )); then
     (while kill -0 "$self" 2>/dev/null; do sleep 1; done; kill "$watcher" 2>/dev/null) >/dev/null 2>&1 &
@@ -396,6 +502,11 @@ cmd_watch() {
       continue
     fi
     (( rc == 0 )) || break
+    if [[ $engine == omapager ]]; then
+      [[ $file == "$engine_live" || $file == "$engine_history" ]] || continue
+      with_lock ingest_engine_one
+      continue
+    fi
     [[ $file == *.json ]] || continue
     is_under "$file" "$src_dir" || is_under "$file" "$src_history" || continue
     with_lock ingest_one "$file"
@@ -715,8 +826,8 @@ seed_entries() {
 }
 
 case ${1:-} in
-  sync) shift; quiet=1; cmd_sync; printf '{"ok":true,"synced":true}\n' ;;
-  watch) shift; cmd_watch ;;
+  sync) shift; set_engine "${1:-legacy}"; quiet=1; cmd_sync; printf '{"ok":true,"synced":true}\n' ;;
+  watch) shift; cmd_watch "${1:-legacy}" ;;
   list) shift; cmd_list "${1:-200}" ;;
   trash-list) shift; cmd_trash_list "${1:-200}" ;;
   dismiss) shift; cmd_dismiss "${1:-}" ;;
@@ -736,8 +847,9 @@ case ${1:-} in
     cat >&2 <<'USAGE'
 yoyo.notification-center store
 
-  watch              follow Omarchy notifications and archive them
-  sync               catch up, then prune
+  watch [ENGINE]     follow Omarchy notifications and archive them
+  sync [ENGINE]      catch up, then prune
+                     ENGINE: legacy (4.0, default), omapager (4.5), auto
   list [LIMIT]       history, newest first
   trash-list [LIMIT] recycle bin
   dismiss KEY        history → trash

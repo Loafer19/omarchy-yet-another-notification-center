@@ -1,0 +1,8 @@
+history.json: 9 rows from a real Omarchy 4.5 (omarchy-dev edge, Omapager)
+history.json, chosen to cover each kind seen (app, low, critical, Chrome
+web notification with a source anchor, omarchy-action with glyph and
+timeout, omasnap with execArgv/execActions naming a screenshot, a crash
+action). Keys, ids, times, apps, icons, urgencies, durations and close
+reasons are as recorded; summaries, bodies, raw bodies, the web origin, home
+paths, pids and hashes are replaced. live.json and quiet.json follow the
+same format (live rows carry no closed_ts).

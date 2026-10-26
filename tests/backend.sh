@@ -248,6 +248,94 @@ else
   echo "SKIP  watch (no inotifywait)"
 fi
 
+echo "== omapager (Omarchy 4.5: live.json / history.json)"
+fx=$here/fixtures/omapager
+o=$tmp/omapager
+O() { YANC_SRC_DIR=$o/src YANC_STORE=$o/store bash "$backend" "$@"; }
+mkdir -p "$o/src" "$o/home/Pictures/Screenshots"
+# The fixture's screenshot path made real, so a picture *could* be copied.
+shot=$o/home/Pictures/Screenshots/screenshot-2026-10-26_10-45-13-google-chrome.png
+printf '\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\1\0\0\0\1\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\rIDATx\x9cc\xf8\xff\xff?\0\x05\xfe\x02\xfe\xa7\x35\x81\x84\0\0\0\0IEND\xaeB`\x82' > "$shot"
+sed "s#/home/user/#$o/home/#g" "$fx/history.json" > "$o/src/history.json"
+cp "$fx/live.json" "$fx/quiet.json" "$o/src/"
+expect "sync omapager" "$(O sync omapager)" '{"ok":true,"synced":true}'
+a=$o/store/archive.jsonl
+expect "every history and live row archived once" "$(wc -l < "$a")" 11
+expect "oldest first (history reversed, then live)" "$(jq -r .key "$a" | paste -sd' ')" \
+  "nmvo4b91g11 nmvozwuon1 nmvp0h2bc5 nmvp105ca7 nmvp10elc9 nmvp1dkmza nmvp1dn8xb nmvp2hef8e nmvp4z4h67 nmvp5a1b2c nmvp5a3d4e"
+expect "ts (s) -> timestamp (ms)" "$(jq -r 'select(.key == "nmvp1dn8xb") | .timestamp' "$a")" 1793005833201
+expect "fields as the 4.0 path writes them" "$(jq -c 'select(.key == "nmvp10elc9")' "$a")" \
+  "$(jq -nc --arg g "$(jq -r '.[] | select(.key == "nmvp10elc9") | .glyph' "$fx/history.json")" \
+    '{key:"nmvp10elc9",app:"omarchy-action",appIcon:"battery-caution",summary:"Fixture summary 5",body:"Fixture body 5",image:"",preview:"",file:"",glyph:$g,urgency:1,timestamp:1793005215456}')"
+expect "urgencies kept (low / critical)" "$(jq -r 'select(.key == "nmvp2hef8e" or .key == "nmvo4b91g11") | .urgency' "$a" | paste -sd' ')" "2 0"
+expect "no pictures archived, even for a real screenshot path" \
+  "$(jq -r 'select(.key == "nmvp0h2bc5") | .image + .preview' "$a")|$(find "$o/store/images" -type f | wc -l)" "|0"
+gone "the old history/ folder is not created" "$o/src/history"
+expect "the ledger holds the keys both files hold" "$(LC_ALL=C sort "$o/store/engine-keys" | paste -sd' ')" \
+  "$(jq -r '.[].key' "$o/src/history.json" "$o/src/live.json" | LC_ALL=C sort | paste -sd' ')"
+O sync omapager > /dev/null
+expect "a second sync adds nothing" "$(wc -l < "$a")" 11
+# A live row that closes moves to history.json under the same key.
+jq -c '[.[0] + {closed_ts: 1793012010, closed_reason: "expired"}] + input' "$o/src/live.json" "$o/src/history.json" > "$o/h.json"
+mv "$o/h.json" "$o/src/history.json"; jq -c '.[1:]' "$fx/live.json" > "$o/src/live.json"
+O sync omapager > /dev/null
+expect "closing a live row does not archive it twice" "$(jq -r 'select(.key == "nmvp5a1b2c") | .key' "$a" | wc -l)" 1
+# Empty Trash forgets rows; history.json still has them for 24 h.
+O clear > /dev/null; O empty-trash > /dev/null
+O sync omapager > /dev/null
+expect "rows emptied from Trash do not come back" "$(wc -l < "$a")" 0
+jq -nc '[{key:"nnew1",app:"New",summary:"fresh",ts:1793012100}]' > "$o/src/live.json"
+O sync omapager > /dev/null
+expect "a new row after that still arrives" "$(jq -r .key "$a")" nnew1
+# History expiring rows shrinks the ledger with it.
+jq -c '.[:2]' "$o/src/history.json" > "$o/h.json"; mv "$o/h.json" "$o/src/history.json"
+O sync omapager > /dev/null
+expect "ledger follows the files" "$(wc -l < "$o/store/engine-keys")" 3
+# Hostile or broken files.
+printf '%s\n' '[{"key":"../x","summary":"bad"},{"key":5},"str",null,{"summary":"no key"},{"key":"ok1","summary":"good","appIcon":"../etc","app":"'"$(printf 'A%.0s' $(seq 1 80))"'","ts":"x","closed_ts":1793012200}]' > "$o/src/history.json"
+O sync omapager > /dev/null
+expect "only valid keys taken" "$(jq -r 'select(.key != "nnew1") | .key' "$a")" ok1
+expect "unsafe icon dropped, app cut, ts falls back to closed_ts" \
+  "$(jq -c 'select(.key == "ok1") | [.appIcon, (.app | length), .timestamp]' "$a")" '["",64,1793012200000]'
+for bad in '{"key":"x"}' 'not json' ''; do
+  printf '%s' "$bad" > "$o/src/history.json"
+  out=$(O sync omapager)
+  expect "history.json '${bad:-empty}': sync still ok" "$out" '{"ok":true,"synced":true}'
+done
+expect "...and nothing added" "$(wc -l < "$a")" 2
+expect "unknown engine is an error" "$(O sync nonsense 2>/dev/null | jq -r .error)" "unknown engine: nonsense"
+# auto: omapager when its files are there, else the 4.0 layout.
+a2=$tmp/auto; mkdir -p "$a2/src"; cp "$fx/live.json" "$a2/src/"
+YANC_SRC_DIR=$a2/src YANC_STORE=$a2/store bash "$backend" sync auto > /dev/null
+expect "auto picks omapager when live.json is there" "$(wc -l < "$a2/store/archive.jsonl")" 2
+gone "...and makes no history/" "$a2/src/history"
+# legacy (no engine) ignores the 4.5 files, as before.
+YANC_SRC_DIR=$a2/src YANC_STORE=$a2/legacy bash "$backend" sync > /dev/null 2>&1
+expect "legacy sync ignores live.json/history.json" "$(wc -l < "$a2/legacy/archive.jsonl")" 0
+if command -v inotifywait >/dev/null 2>&1; then
+  ow=$tmp/owatch; mkdir -p "$ow/src"; cp "$fx/history.json" "$ow/src/"
+  YANC_STORE=$ow/store YANC_SRC_DIR=$ow/src timeout 8 bash "$backend" watch omapager > "$ow/out" 2>/dev/null &
+  wpid=$!
+  for _ in $(seq 1 30); do [[ -s $ow/store/engine-keys ]] && break; sleep 0.1; done
+  sleep 0.5
+  expect "watch: startup sync is quiet" "$(wc -c < "$ow/out")" 0
+  # Omarchy writes atomically: a temp file renamed over live.json.
+  jq -c '.[0:1]' "$fx/live.json" > "$ow/src/.live.json.tmp"; mv "$ow/src/.live.json.tmp" "$ow/src/live.json"
+  for _ in $(seq 1 30); do grep -q nmvp5a1b2c "$ow/out" 2>/dev/null && break; sleep 0.1; done
+  expect "watch prints a new live row" "$(jq -r .key "$ow/out" 2>/dev/null)" nmvp5a1b2c
+  printf '{"dnd":false}\n' > "$ow/src/quiet.json"
+  jq -c '[.[0] + {closed_ts: 1793012010, closed_reason: "expired"}] + input' "$fx/live.json" "$fx/history.json" > "$ow/src/.h.tmp"
+  mv "$ow/src/.h.tmp" "$ow/src/history.json"; printf '[]\n' > "$ow/src/live.json"
+  sleep 1
+  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+  pkill -f "inotifywait.*$ow/src" 2>/dev/null
+  expect "watch: the same row closing is not announced again" "$(jq -r .key "$ow/out" | paste -sd' ')" nmvp5a1b2c
+  expect "watch archived history + the live row" "$(wc -l < "$ow/store/archive.jsonl")" 10
+  gone "watch omapager makes no history/" "$ow/src/history"
+else
+  echo "SKIP  watch omapager (no inotifywait)"
+fi
+
 echo
 printf 'RESULT  %d passed, %d failed\n' "$pass" "$fail"
 (( fail == 0 ))
