@@ -73,7 +73,8 @@ tests/run.sh
 
 Checks the vendored UI kit, runs the Model.js tests with Node and the
 backend tests against a temporary store (your notifications are never
-touched). Also needs `node`.
+touched). `tests/autohide.sh` runs the real service in Quickshell (`qs`,
+offscreen) against a fake toast stack and times auto-hide. Also needs `node`.
 
 ## Remove
 

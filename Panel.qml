@@ -555,7 +555,7 @@ Panel {
               on: root.autoHideOn
               tooltipText: root.autoHideOn
                 ? "Toasts stay up — Omarchy never expires critical on its own"
-                : "Hide all toasts automatically, including critical"
+                : "Hide each toast 8 s after it appears, including critical"
               onClicked: root.toggleAutoHide()
             }
 

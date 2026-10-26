@@ -113,13 +113,28 @@ eq("absorbLine rejects dup / bad key / junk", [
   M.absorbLine(entries, JSON.stringify({ key: "../x" }), 50),
   M.absorbLine(entries, "{not json", 50),
   M.absorbLine(entries, "null", 50)], [null, null, null, null])
-eq("autoHideStep", [
-  M.autoHideStep(0, true, 3, 1, true),
-  M.autoHideStep(8000, false, 0, 0, false),
-  M.autoHideStep(8000, true, 0, 2, true),
-  M.autoHideStep(8000, true, 3, 2, true),
-  M.autoHideStep(8000, true, 2, 2, false),
-  M.autoHideStep(8000, true, 2, 2, true)], ["stop", "", "stop", "restart", "start", ""])
+// auto-hide: per-toast clocks
+const K = (id, summary, extra) => M.toastKey(Object.assign({ originalId: id, timestamp: 100 + id, summary: summary || "s", body: "b", image: "" }, extra || {}))
+eq("toastKey: same toast, same key; edit/replace -> new key",
+  [K(1) === K(1), K(1) === K(1, "edited"), K(1) === K(1, "s", { image: "/x.png" }), K(1) === K(2), M.toastKey(null), M.toastKey({})],
+  [true, false, false, false, "", "\u001f\u001f\u001f\u001f"])
+eq("plan: off forgets every clock", plain(M.autoHidePlan(0, [K(1)], { [K(1)]: 0 }, 5000)), { seen: {}, expire: [], next: -1 })
+eq("plan: off for junk ms", plain(M.autoHidePlan("abc", [K(1)], {}, 0)).next, -1)
+eq("plan: no toasts", plain(M.autoHidePlan(2000, [], { [K(1)]: 0 }, 100)), { seen: {}, expire: [], next: -1 })
+let p1 = M.autoHidePlan(2000, [K(1)], {}, 1000)
+eq("plan: new toast starts its clock now", [p1.seen[K(1)], plain(p1.expire), p1.next], [1000, [], 2000])
+eq("plan: not yet", plain(M.autoHidePlan(2000, [K(1)], p1.seen, 2999)).next, 1)
+eq("plan: due -> expire", plain(M.autoHidePlan(2000, [K(1)], p1.seen, 3000)).expire, [0])
+// stacked: newest is index 0 (Omarchy inserts at 0)
+let st = M.autoHidePlan(2000, [K(3), K(2), K(1)], { [K(1)]: 0, [K(2)]: 1000 }, 2500)
+eq("plan: stacked toasts keep their own clocks", [plain(st.expire), st.next, st.seen[K(3)]], [[2], 500, 2500])
+st = M.autoHidePlan(2000, [K(3), K(2), K(1)], { [K(1)]: 0, [K(2)]: 0, [K(3)]: 0 }, 9000)
+eq("plan: several due -> indexes high to low", plain(st.expire), [2, 1, 0])
+eq("plan: a newer toast does not extend older ones", plain(M.autoHidePlan(2000, [K(9), K(1)], { [K(1)]: 0 }, 2000).expire), [1])
+eq("plan: replaced/edited toast gets a fresh clock", (() => { const q = M.autoHidePlan(2000, [K(1, "edited")], { [K(1)]: 0 }, 1500); return [plain(q.expire), q.next] })(), [[], 2000])
+eq("plan: gone toasts are forgotten", Object.keys(M.autoHidePlan(2000, [K(2)], { [K(1)]: 0, [K(2)]: 0 }, 10)).length && Object.keys(M.autoHidePlan(2000, [K(2)], { [K(1)]: 0, [K(2)]: 0 }, 10).seen), [K(2)])
+eq("plan: duplicate keys share a clock", plain(M.autoHidePlan(2000, [K(1), K(1)], { [K(1)]: 0 }, 2000).expire), [1, 0])
+eq("plan: shorter setting applies to toasts already up", plain(M.autoHidePlan(1000, [K(1)], { [K(1)]: 0 }, 1200).expire), [0])
 eq("noticeIdentity", [M.noticeIdentity({ app: " Slack ", summary: "Hi" }), M.noticeIdentity({}), M.noticeIdentity({ app: "A", summary: "x".repeat(50) }).length],
   ["Slack · Hi", "Notification", 4 + 42])
 eq("copyTextFor body, else summary", [M.copyTextFor({ body: "  b ", summary: "s" }), M.copyTextFor({ body: " ", summary: "s" }), M.copyTextFor(null)], ["b", "s", ""])

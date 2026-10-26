@@ -274,6 +274,7 @@ Item {
     entries = res.entries
     entryAdded(res.entry)
     maybePlay(res.entry)
+    root.scheduleAutoHide()
   }
 
   function maybePlay(entry) {
@@ -281,7 +282,6 @@ Item {
     if (cfg.soundEnabled === false) return
     if (cfg.muteSoundWhenDnd !== false && root.doNotDisturb) return
     root.playSound(Model.soundFor(entry, cfg))
-    root.scheduleAutoHide()
   }
 
   function hideAllToasts() {
@@ -301,7 +301,22 @@ Item {
     root.run("dismiss-toasts", ["omarchy-shell", "notifications", "dismissAll"])
   }
 
+  // Auto-hide (autoHideMs > 0): every toast is expired autoHideMs after it
+  // appears or last changes (Model.autoHidePlan), critical included — Omarchy
+  // never expires those itself. Toasts go through expirePopup, so senders see
+  // "expired", not "dismissed by the user". Driven by changes to Omarchy's
+  // popupModel, a timer for the next deadline, and a 400 ms poll as backstop.
+  property var popupModel: null
+  property var toastSeen: ({})
+
   function scheduleAutoHide() {
+    var n = root.notificationService()
+    if (n && n.popupModel) {
+      root.noteToasts()
+      return
+    }
+    // No popupModel (older Omarchy): hide everything autoHideMs after the
+    // newest notification, through `omarchy-shell notifications dismissAll`.
     var ms = Number(root.cfg.autoHideMs || 0)
     if (ms <= 0) {
       hideTimer.stop()
@@ -311,19 +326,48 @@ Item {
     hideTimer.restart()
   }
 
-  property int lastPopupCount: 0
-
   function noteToasts() {
     var n = root.notificationService()
-    var hasModel = !!(n && n.popupModel)
-    var count = hasModel ? n.popupModel.count : 0
+    var model = n && n.popupModel ? n.popupModel : null
+    if (root.popupModel !== model) root.popupModel = model
     var ms = Number(root.cfg.autoHideMs || 0)
-    var step = Model.autoHideStep(ms, hasModel, count, root.lastPopupCount, hideTimer.running)
-    if (step === "" && !hasModel && ms > 0) return
-    if (step === "stop") hideTimer.stop()
-    else if (step === "restart") { hideTimer.interval = ms; hideTimer.restart() }
-    else if (step === "start") { hideTimer.interval = ms; hideTimer.start() }
-    root.lastPopupCount = count
+    if (!model) {
+      if (ms <= 0) hideTimer.stop()
+      return
+    }
+    var keys = []
+    for (var i = 0; i < model.count; i++) keys.push(Model.toastKey(model.get(i)))
+    var plan = Model.autoHidePlan(ms, keys, root.toastSeen, Date.now())
+    root.toastSeen = plan.seen
+    if (plan.expire.length > 0) {
+      root.expireToasts(n, plan.expire)
+      Qt.callLater(root.noteToasts)
+    }
+    if (plan.next >= 0) {
+      hideTimer.interval = Math.max(10, Math.ceil(plan.next))
+      hideTimer.restart()
+    } else {
+      hideTimer.stop()
+    }
+  }
+
+  function expireToasts(n, indexes) {
+    for (var i = 0; i < indexes.length; i++) {
+      var idx = indexes[i]
+      if (typeof n.expirePopup === "function") n.expirePopup(idx)
+      else if (typeof n.dismissPopup === "function") n.dismissPopup(idx)
+      else {
+        root.run("dismiss-toasts", ["omarchy-shell", "notifications", "dismissAll"])
+        return
+      }
+    }
+  }
+
+  Connections {
+    target: root.popupModel
+    ignoreUnknownSignals: true
+    function onCountChanged() { Qt.callLater(root.noteToasts) }
+    function onDataChanged() { Qt.callLater(root.noteToasts) }
   }
 
   FileView {
@@ -390,7 +434,11 @@ Item {
   Timer {
     id: hideTimer
     repeat: false
-    onTriggered: root.hideAllToasts()
+    onTriggered: {
+      var n = root.notificationService()
+      if (n && n.popupModel) root.noteToasts()
+      else root.hideAllToasts()
+    }
   }
 
   Timer {

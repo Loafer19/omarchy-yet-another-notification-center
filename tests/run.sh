@@ -8,3 +8,4 @@ tools/sync-ui.sh --check
 node tests/model.test.js
 bash tests/backend.sh
 bash tests/prune.sh
+bash tests/autohide.sh

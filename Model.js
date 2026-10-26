@@ -447,15 +447,38 @@ function absorbLine(entries, line, limit) {
   return { entries: next, entry: entry }
 }
 
-// What the auto-hide timer should do on a toast-count poll:
-// "stop", "restart", "start" or "" (leave it).
-function autoHideStep(ms, hasModel, count, lastCount, timerRunning) {
-  if (Number(ms || 0) <= 0) return "stop"
-  if (!hasModel) return ""
-  if (count === 0) return "stop"
-  if (count > lastCount) return "restart"
-  if (!timerRunning) return "start"
-  return ""
+// Auto-hide works per toast, like Omarchy's own countdown: each toast goes
+// `ms` after it first appeared, and a toast whose content changed (a
+// replaces_id update or an in-place edit) counts as new, so its clock starts
+// over. toastKey is that identity.
+function toastKey(row) {
+  if (!row) return ""
+  var parts = [row.originalId, row.timestamp, row.summary, row.body, row.image]
+  for (var i = 0; i < parts.length; i++)
+    parts[i] = (parts[i] === undefined || parts[i] === null) ? "" : String(parts[i])
+  return parts.join("\u001f")
+}
+
+// keys: toastKey of each on-screen toast, in model order. firstSeen: key ->
+// ms it was first seen (from the previous call). Returns the new firstSeen
+// (only toasts still on screen), the indexes to expire now (high to low, so
+// removing one keeps the others valid) and ms until the next deadline (-1:
+// nothing pending). ms <= 0 turns auto-hide off and forgets every clock.
+function autoHidePlan(ms, keys, firstSeen, now) {
+  ms = Number(ms || 0)
+  var plan = { seen: {}, expire: [], next: -1 }
+  if (!(ms > 0)) return plan
+  var prev = firstSeen || {}
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i]
+    var t = Object.prototype.hasOwnProperty.call(prev, k) ? Number(prev[k]) : now
+    if (Object.prototype.hasOwnProperty.call(plan.seen, k)) t = plan.seen[k]
+    plan.seen[k] = t
+    var left = t + ms - now
+    if (left <= 0) plan.expire.unshift(i)
+    else if (plan.next < 0 || left < plan.next) plan.next = left
+  }
+  return plan
 }
 
 // "App · summary" for row notices (summary cut at 42 chars).
