@@ -137,7 +137,7 @@ Panel {
 
   readonly property var historyView: Model.visibleEntries(entries, filter, historyFilter)
   readonly property var trashView: Model.rowsFor(trashEntries)
-  readonly property var settingsView: Model.settingRows(cfg, settingsFilter, store && store.apps ? store.apps : [])
+  readonly property var settingsView: Model.settingRows(cfg, settingsFilter, store && store.apps ? store.apps : [], store ? store.engine : "")
 
   property bool cursorActive: false
   property string focusSection: "rows"

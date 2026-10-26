@@ -191,5 +191,43 @@ eq("manifest has no second copy of the settings", [manifest.barWidget.schema, ma
 const panel = fs.readFileSync(path.join(dir, "Panel.qml"), "utf8")
 eq("Panel reads no Omarchy widget settings", [/\bsetting\(/.test(panel), /pushSchemaSettings/.test(panel)], [false, false])
 
+// --- Omarchy 4.5 (Omapager) ---------------------------------------------------------
+// Fixtures: anonymised rows from a real 4.5 history.json/live.json.
+const fx = name => JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures/omapager", name), "utf8"))
+const hist45 = fx("history.json"), live45 = fx("live.json")
+eq("engineOf: no service", M.engineOf(null), "")
+eq("engineOf: 4.0 (popupModel)", M.engineOf({ popupModel: { count: 0 }, expirePopup() {} }), "legacy")
+eq("engineOf: older Omarchy (no toast API)", M.engineOf({ setDoNotDisturb() {} }), "legacy")
+eq("engineOf: 4.5 (liveEntries + historyEntries)", M.engineOf({ liveEntries: live45, historyEntries: hist45, closeToast() {} }), "omapager")
+eq("engineOf: 4.5 with nothing on screen yet", M.engineOf({ liveEntries: [], historyEntries: [] }), "omapager")
+eq("engineOf: half the 4.5 API is not 4.5", M.engineOf({ liveEntries: [] }), "legacy")
+eq("liveToasts: one per keyed row", M.liveToasts(live45).map(t => t.key), ["nmvp5a1b2c", "nmvp5a3d4e"])
+eq("liveToasts: every real history row has a key", M.liveToasts(hist45).length, hist45.length)
+eq("liveToasts: junk skipped", M.liveToasts([null, {}, { key: "" }, { key: "a", ts: 1 }]).map(t => t.key), ["a"])
+eq("liveToasts(null)", M.liveToasts(null), [])
+eq("liveToastKey: an update (new ts) is a new toast", M.liveToastKey(live45[0]) === M.liveToastKey(Object.assign({}, live45[0], { ts: live45[0].ts + 3 })), false)
+eq("liveToastKey: same row, same toast", M.liveToastKey(live45[0]) === M.liveToastKey(JSON.parse(JSON.stringify(live45[0]))), true)
+{
+  // The 4.5 auto-hide path: Model.autoHidePlan over liveToasts ids, expire
+  // indexes mapped back to keys (as Service.noteLive does).
+  const ids = rows => M.liveToasts(rows).map(t => t.id)
+  const keysOf = (rows, plan) => plan.expire.slice().reverse().map(i => M.liveToasts(rows)[i].key)
+  let p = M.autoHidePlan(2000, ids(live45), {}, 0)
+  eq("4.5 plan: both live rows clocked, critical too", [Object.keys(p.seen).length, p.next], [2, 2000])
+  const later = live45.concat([Object.assign({}, live45[0], { key: "nlater", ts: 1793012010 })])
+  p = M.autoHidePlan(2000, ids(later), p.seen, 1000)
+  eq("4.5 plan: a later row gets its own clock", p.next, 1000)
+  p = M.autoHidePlan(2000, ids(later), p.seen, 2000)
+  eq("4.5 plan: the first two close by key", keysOf(later, p).sort(), ["nmvp5a1b2c", "nmvp5a3d4e"])
+  const updated = [Object.assign({}, live45[0], { ts: live45[0].ts + 1.5 })]
+  p = M.autoHidePlan(2000, ids(updated), { [M.liveToastKey(live45[0])]: 0 }, 1500)
+  eq("4.5 plan: an update restarts the clock", [p.expire, p.next], [[], 2000])
+}
+eq("settingRows: 4.0 wording unchanged", M.settingRows(M.DEFAULTS, "general", []).filter(r => r.key === "showPreview")[0].subtitle,
+  "Off stops keeping copies of new ones")
+eq("settingRows: legacy engine = 4.0 wording", JSON.stringify(M.settingRows(M.DEFAULTS, "general", [], "legacy")), JSON.stringify(M.settingRows(M.DEFAULTS, "general", [])))
+eq("settingRows: 4.5 says pictures are not kept", M.settingRows(M.DEFAULTS, "general", [], "omapager").filter(r => r.key === "showPreview")[0].subtitle,
+  "Omarchy 4.5 doesn't keep pictures; older ones still show")
+
 console.log(`\npassed ${pass}, failed ${fail}`)
 process.exit(fail ? 1 : 0)

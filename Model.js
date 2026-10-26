@@ -295,7 +295,8 @@ function limitOf(name) {
   return LIMITS[name] || { min: 0, max: 0, step: 1, fallback: 0 }
 }
 
-function settingRows(cfg, filter, apps) {
+// engine: "omapager" (Omarchy 4.5) changes the wording where 4.5 differs.
+function settingRows(cfg, filter, apps, engine) {
   var c = cfg || DEFAULTS
   var rows = []
   function add(row) {
@@ -349,7 +350,10 @@ function settingRows(cfg, filter, apps) {
   add({ key: "maxItems", kind: "step", title: "Hard ceiling", subtitle: "Extra History still overflows to Trash", numericValue: clampNamed("maxItems", c.maxItems), min: maxItems.min, max: maxItems.max, step: maxItems.step })
   add({ key: "clickAction", kind: "enum", title: "Clicking a notification", subtitle: "Never runs the sender's command", optionSet: "clickAction", currentValue: String(c.clickAction || DEFAULTS.clickAction) })
   add({ key: "showBody", kind: "toggle", title: "Show the message text", subtitle: "Off leaves the sender and subject", checked: !!c.showBody })
-  add({ key: "showPreview", kind: "toggle", title: "Show pictures", subtitle: "Off stops keeping copies of new ones", checked: !!c.showPreview })
+  add({ key: "showPreview", kind: "toggle", title: "Show pictures",
+        subtitle: engine === "omapager" ? "Omarchy 4.5 doesn't keep pictures; older ones still show"
+                                        : "Off stops keeping copies of new ones",
+        checked: !!c.showPreview })
   add({ key: "badge", kind: "enum", title: "Unread mark", subtitle: "On the bar bell", optionSet: "badge", currentValue: String(c.badge || DEFAULTS.badge) })
   return rows
 }
@@ -457,6 +461,33 @@ function toastKey(row) {
   for (var i = 0; i < parts.length; i++)
     parts[i] = (parts[i] === undefined || parts[i] === null) ? "" : String(parts[i])
   return parts.join("\u001f")
+}
+
+// Omarchy 4.5's notification service (Omapager) keeps its toasts private and
+// publishes them as liveEntries (persisted rows, each with a stable key and
+// ts, the arrival time in seconds, which an update renews). 4.0.x has
+// popupModel instead. "" = no service (yet).
+function engineOf(service) {
+  if (!service) return ""
+  if (service.liveEntries !== undefined && service.historyEntries !== undefined) return "omapager"
+  return "legacy"
+}
+
+// On 4.5 a toast is its key plus its arrival time, so an update is new.
+function liveToastKey(row) {
+  if (!row || !row.key) return ""
+  return String(row.key) + "\u001f" + String(row.ts === undefined || row.ts === null ? "" : row.ts)
+}
+
+// liveEntries as [{ key, id }] (id = liveToastKey), invalid rows skipped.
+function liveToasts(entries) {
+  var out = []
+  var list = entries || []
+  for (var i = 0; i < list.length; i++) {
+    var id = liveToastKey(list[i])
+    if (id) out.push({ key: String(list[i].key), id: id })
+  }
+  return out
 }
 
 // keys: toastKey of each on-screen toast, in model order. firstSeen: key ->

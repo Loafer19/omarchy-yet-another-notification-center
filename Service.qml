@@ -23,10 +23,18 @@ Item {
   property bool loaded: false
   property bool doNotDisturb: false
 
+  // Which Omarchy notification engine is running (Model.engineOf): "legacy"
+  // (4.0.x, popupModel), "omapager" (4.5, liveEntries/historyEntries), or
+  // "auto" when no service turned up (the backend then goes by the files).
+  // "" until known; the watcher starts once it is.
+  property string engine: ""
+  property var engineService: null
+
   readonly property string dndSettingsPath: {
     var state = Quickshell.env("XDG_STATE_HOME")
     var home = Quickshell.env("HOME")
     var rootDir = state ? state : (home + "/.local/state")
+    if (root.engine === "omapager") return rootDir + "/omarchy/notifications/quiet.json"
     return rootDir + "/omarchy/notifications.json"
   }
 
@@ -106,7 +114,36 @@ Item {
     return n
   }
 
-  // Single source of truth: notifications.json via FileView.
+  function refreshEngine() {
+    var n = root.notificationService()
+    var found = Model.engineOf(n)
+    if (found === "omapager") {
+      if (root.engineService !== n) root.engineService = n
+      if (n.doNotDisturb !== undefined && root.doNotDisturb !== (n.doNotDisturb === true))
+        root.doNotDisturb = n.doNotDisturb === true
+    }
+    if (!found || found === root.engine || root.engine === "omapager") return
+    root.engine = found
+    root.startWatch()
+  }
+
+  readonly property var watchArgs: root.engine === "legacy" || root.engine === ""
+    ? ["watch"] : ["watch", root.engine]
+  property bool watchSwitch: false
+
+  // (Re)start the backend watcher for the current engine.
+  function startWatch() {
+    if (!root.engine) return
+    if (watchProc.running) {
+      root.watchSwitch = true
+      watchProc.running = false
+      return
+    }
+    watchProc.running = true
+  }
+
+  // Single source of truth: notifications.json via FileView (4.5: the
+  // service's quiet.json, plus its doNotDisturb property).
   // Polling `dndState` raced the file (CLI lagged behind JSON) and made the
   // bell/toggle flicker — that is why the old local setDnd/hydrate existed.
   function readDnd(raw) {
@@ -311,7 +348,7 @@ Item {
 
   function scheduleAutoHide() {
     var n = root.notificationService()
-    if (n && n.popupModel) {
+    if (root.engine === "omapager" || (n && n.popupModel)) {
       root.noteToasts()
       return
     }
@@ -328,6 +365,10 @@ Item {
 
   function noteToasts() {
     var n = root.notificationService()
+    if (root.engine === "omapager") {
+      root.noteLive(n)
+      return
+    }
     var model = n && n.popupModel ? n.popupModel : null
     if (root.popupModel !== model) root.popupModel = model
     var ms = Number(root.cfg.autoHideMs || 0)
@@ -351,6 +392,42 @@ Item {
     }
   }
 
+  // 4.5: the same per-toast plan over liveEntries (key + arrival time), and
+  // closeToasts(keys, "expired"). While the deck is held open (pointer or
+  // keyboard on it) nothing is closed; the 400 ms poll retries.
+  function noteLive(n) {
+    var ms = Number(root.cfg.autoHideMs || 0)
+    var live = Model.liveToasts(n ? n.liveEntries : [])
+    var ids = []
+    for (var i = 0; i < live.length; i++) ids.push(live[i].id)
+    var plan = Model.autoHidePlan(ms, ids, root.toastSeen, Date.now())
+    root.toastSeen = plan.seen
+    var held = !!n && typeof n.holding === "function" && n.holding() === true
+    if (plan.expire.length > 0 && !held) {
+      var keys = []
+      for (var j = plan.expire.length - 1; j >= 0; j--) keys.push(live[plan.expire[j]].key)
+      root.closeLive(n, keys)
+    }
+    if (plan.next >= 0) {
+      hideTimer.interval = Math.max(10, Math.ceil(plan.next))
+      hideTimer.restart()
+    } else {
+      hideTimer.stop()
+    }
+  }
+
+  function closeLive(n, keys) {
+    if (n && typeof n.closeToasts === "function") {
+      n.closeToasts(keys, "expired")
+      return
+    }
+    if (n && typeof n.closeToast === "function") {
+      for (var i = 0; i < keys.length; i++) n.closeToast(keys[i], "expired")
+      return
+    }
+    root.run("dismiss-toasts", ["omarchy-shell", "notifications", "dismissAll"])
+  }
+
   function expireToasts(n, indexes) {
     for (var i = 0; i < indexes.length; i++) {
       var idx = indexes[i]
@@ -370,6 +447,15 @@ Item {
     function onDataChanged() { Qt.callLater(root.noteToasts) }
   }
 
+  Connections {
+    target: root.engineService
+    ignoreUnknownSignals: true
+    function onLiveEntriesChanged() { Qt.callLater(root.noteToasts) }
+    function onDoNotDisturbChanged() {
+      if (root.engineService) root.doNotDisturb = root.engineService.doNotDisturb === true
+    }
+  }
+
   FileView {
     id: dndFile
     path: root.dndSettingsPath
@@ -382,18 +468,32 @@ Item {
 
   Process {
     id: watchProc
-    command: root.storeCommand(["watch"])
-    running: true
+    command: root.storeCommand(root.watchArgs)
+    running: false
     stdout: SplitParser {
       onRead: function(line) { root.absorb(line) }
     }
-    onExited: restartWatch.restart()
+    onExited: {
+      if (root.watchSwitch) {
+        root.watchSwitch = false
+        watchProc.running = true
+        return
+      }
+      restartWatch.restart()
+    }
   }
 
   Timer {
     id: restartWatch
     interval: 5000
-    onTriggered: if (!watchProc.running) watchProc.running = true
+    onTriggered: if (!watchProc.running && root.engine) watchProc.running = true
+  }
+
+  // No notification service after 3 s: let the backend pick by the files.
+  Timer {
+    id: engineFallback
+    interval: 3000
+    onTriggered: if (!root.engine) { root.engine = "auto"; root.startWatch() }
   }
 
   // One checked call (see run()). Finishes once the process has exited and
@@ -436,7 +536,7 @@ Item {
     repeat: false
     onTriggered: {
       var n = root.notificationService()
-      if (n && n.popupModel) root.noteToasts()
+      if (root.engine === "omapager" || (n && n.popupModel)) root.noteToasts()
       else root.hideAllToasts()
     }
   }
@@ -445,7 +545,10 @@ Item {
     interval: 400
     running: true
     repeat: true
-    onTriggered: root.noteToasts()
+    onTriggered: {
+      root.refreshEngine()
+      root.noteToasts()
+    }
   }
 
   Process {
@@ -514,6 +617,8 @@ Item {
   }
 
   Component.onCompleted: {
+    root.refreshEngine()
+    if (!root.engine) engineFallback.start()
     root.readDnd(dndFile.text())
     loadSettings()
     readSeen()
