@@ -208,6 +208,42 @@ if command -v inotifywait >/dev/null 2>&1; then
   pkill -f "inotifywait.*$w/src" 2>/dev/null
   expect "watch prints the new entry" "$(jq -r .key "$w/out" 2>/dev/null | head -n1)" 2001-1
   expect "watch archived it" "$(jq -r .key "$w/store/archive.jsonl")" 2001-1
+
+  # watcher_of PID — the inotifywait watching $w/src that PID started, if any
+  # (directly, or through setpriv/a subshell).
+  watcher_of() {
+    local p pp
+    for p in $(pgrep -f "inotifywait .*$w/src"); do
+      pp=$(ps -o ppid= -p "$p" | tr -d ' ')
+      [[ $pp == "$1" || $(ps -o ppid= -p "$pp" 2>/dev/null | tr -d ' ') == "$1" ]] && echo "$p"
+    done
+    return 0
+  }
+  has_watcher() { [[ -n $(watcher_of "$1") ]]; }
+  dead() { local p; for p; do [[ -z $p ]] || ! kill -0 "$p" 2>/dev/null || return 1; done; }
+  wait_for() { local n=$1; shift; for _ in $(seq 1 "$n"); do "$@" && return 0; sleep 0.1; done; return 1; }
+  for mode in pdeathsig guard; do
+    unset YANC_NO_PDEATHSIG; [[ $mode == guard ]] && export YANC_NO_PDEATHSIG=1
+    YANC_STORE=$w/store YANC_SRC_DIR=$w/src bash "$backend" watch > /dev/null 2>&1 &
+    wpid=$!
+    wait_for 50 has_watcher "$wpid"
+    iw=$(watcher_of "$wpid")
+    kill -9 "$wpid"; wait "$wpid" 2>/dev/null
+    if [[ -n $iw ]] && wait_for 40 dead "$iw"; then ok "SIGKILLed backend takes its inotifywait along ($mode)"
+    else no "SIGKILLed backend takes its inotifywait along ($mode)" "watcher=${iw:-none} still alive: $(pgrep -af "inotifywait .*$w/src")"; fi
+    pkill -f "inotifywait .*$w/src" 2>/dev/null
+  done
+  unset YANC_NO_PDEATHSIG
+  # Its parent SIGKILLed (the shell dying): the backend notices and leaves.
+  # shellcheck disable=SC2016  # $1/$2/$! belong to the inner bash
+  YANC_WATCH_CHECK=1 YANC_STORE=$w/store YANC_SRC_DIR=$w/src setsid bash -c 'bash "$1" watch >/dev/null 2>&1 & echo $! > "$2"; wait' _ "$backend" "$w/bpid" &
+  holder=$!
+  wait_for 50 test -s "$w/bpid"; bpid=$(cat "$w/bpid")
+  wait_for 50 has_watcher "$bpid"; iw=$(watcher_of "$bpid")
+  kill -9 "$holder"; wait "$holder" 2>/dev/null
+  if [[ -n $iw ]] && wait_for 50 dead "$bpid" "$iw"; then ok "orphaned backend exits and its watcher goes"
+  else no "orphaned backend exits and its watcher goes" "backend $bpid / watcher ${iw:-none} still alive"; kill "$bpid" 2>/dev/null; fi
+  pkill -f "inotifywait .*$w/src" 2>/dev/null
 else
   echo "SKIP  watch (no inotifywait)"
 fi

@@ -364,12 +364,38 @@ cmd_watch() {
 
   command -v inotifywait >/dev/null 2>&1 || die "inotifywait is not installed"
 
-  exec 3< <(inotifywait -m -q -e close_write -e moved_to --format '%w%f' \
+  # inotifywait must not outlive us. The EXIT trap only runs when we exit
+  # cleanly; when the shell restarts, this script can be SIGKILLed, and the
+  # watcher used to linger, reparented to systemd, one per restart. So the
+  # kernel kills it with us (setpriv --pdeathsig), or, without setpriv, a
+  # small guard does once our pid is gone.
+  local self=$BASHPID parent check=${YANC_WATCH_CHECK:-5}
+  parent=$(ps -o ppid= -p "$self" 2>/dev/null | tr -d ' ')
+  local -a deathsig=()
+  if [[ -z ${YANC_NO_PDEATHSIG:-} ]] && command -v setpriv >/dev/null 2>&1 \
+    && setpriv --pdeathsig TERM true 2>/dev/null; then
+    deathsig=(setpriv --pdeathsig TERM --)
+  fi
+  exec 3< <(exec "${deathsig[@]}" inotifywait -m -q -e close_write -e moved_to --format '%w%f' \
     "$src_dir" "$src_history" 2>/dev/null)
   watcher=$!
+  if (( ${#deathsig[@]} == 0 )); then
+    (while kill -0 "$self" 2>/dev/null; do sleep 1; done; kill "$watcher" 2>/dev/null) >/dev/null 2>&1 &
+  fi
   trap 'kill "$watcher" 2>/dev/null' EXIT INT TERM
 
-  while IFS= read -r file <&3; do
+  local file rc now_parent
+  while true; do
+    IFS= read -r -t "$check" file <&3; rc=$?
+    if (( rc > 128 )); then
+      # Timed out: stop once whoever started us is gone (we were reparented)
+      # or the watcher died.
+      now_parent=$(ps -o ppid= -p "$self" 2>/dev/null | tr -d ' ')
+      [[ -n $parent && $now_parent != "$parent" ]] && exit 0
+      kill -0 "$watcher" 2>/dev/null || exit 1
+      continue
+    fi
+    (( rc == 0 )) || break
     [[ $file == *.json ]] || continue
     is_under "$file" "$src_dir" || is_under "$file" "$src_history" || continue
     with_lock ingest_one "$file"
