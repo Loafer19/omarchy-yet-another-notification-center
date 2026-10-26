@@ -43,8 +43,22 @@ Works with both notification engines; the plugin picks one at startup.
 - **Omarchy 4.5 (Omapager)** — reads the engine's `live.json` / `history.json`
   under `~/.local/state/omarchy/notifications/`. Auto-hide closes toasts
   through the engine (and waits while you hover the stack), and DND follows
-  the engine's own switch. Omapager doesn't keep pictures, so new rows have
-  none; older ones still show.
+  the engine's own switch. Omapager's files keep no pictures and no actions,
+  so the plugin gets what it can while a toast is on screen:
+  - **Pictures** are saved the moment a toast arrives (inline image data or
+    an image file, scaled to 512 px at most), even when Do Not Disturb lets
+    the toast go at once. Off with *Show pictures*. Screenshot previews come
+    from Omarchy's click command, as on 4.0.
+  - **Links**: the first web address in the text, else the site a browser
+    notification came from. With *Auto* clicks, a row whose app can't be
+    focused opens it.
+  - **Actions**: while the toast is still up, clicking its row (*Auto*) runs
+    the sender's default action. Once it closes, actions are gone for good.
+
+  Limits: a picture is only saved while the bar widget is loaded; an
+  in-place update keeps the first picture; verification-code notifications
+  are stored only as Omarchy's placeholder, with no picture or link; the
+  plugin never runs Omarchy's `--action` commands.
 
 ## Install
 
@@ -87,8 +101,9 @@ Checks the vendored UI kit, runs the Model.js tests with Node and the
 backend tests against a temporary store (your notifications are never
 touched). `tests/autohide.sh` runs the real service in Quickshell (`qs`,
 offscreen) against a fake toast stack and times auto-hide;
-`tests/omapager.sh` does the same against a fake Omarchy 4.5 engine. Also
-needs `node`.
+`tests/omapager.sh` does the same against a fake Omarchy 4.5 engine, and
+`tests/capture.sh` sends real notifications (pictures, actions, a secret,
+DND) to a 4.5-like server on a private D-Bus. Also needs `node`.
 
 ## Remove
 
