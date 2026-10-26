@@ -40,7 +40,9 @@ sorted() { printf '%s\n' "$@" | LC_ALL=C sort | paste -sd' '; }
 note() { # note FILE KEY JSON-FIELDS — an Omarchy popup/history file
   printf '%s\n' "$3" > "$1/$2.json"
 }
-png() { magick -size 8x8 xc:'#336699' "$1" 2>/dev/null || printf '\x89PNG\r\n\x1a\n%s' "$(head -c 64 /dev/zero | tr '\0' x)" > "$1"; }
+# A real PNG: 8x8 from magick, or a 1x1 one when magick is missing (CI).
+png() { magick -size 8x8 xc:'#336699' "$1" 2>/dev/null ||
+  base64 -d > "$1" <<<'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='; }
 
 echo "== usage"
 B >/dev/null 2>&1; expect "no command -> usage, exit 64" "$?" 64

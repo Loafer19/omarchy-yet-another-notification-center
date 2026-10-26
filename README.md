@@ -141,10 +141,22 @@ Layout:
 Lint (both clean): `qmllint` on the plugin's own `.qml` files, and
 `shellcheck -x scripts/backend.sh`.
 
+CI (`.github/workflows/ci.yml`) runs `tests/run.sh` on Ubuntu for every push
+and pull request; the tests that need `qs` or a session bus skip there.
+
+The screenshots (`preview.png`, `docs/*.png`) are rendered offscreen with
+invented notifications: `tools/render-previews.sh` (needs `qs`, `jq`,
+`magick` and the Omarchy shell) runs the real service and panel on a
+throwaway store from `tests/preview/fixture.sh`, so your own history is never
+read.
+
 ## Changelog
 
 Full notes on the [Releases](https://github.com/Loafer19/omarchy-yet-another-notification-center/releases) page.
 
+- **1.5.2**: marketplace readiness: screenshots re-rendered offscreen from
+  made-up notifications (`tools/render-previews.sh`), CI on every push, a
+  License section; no behaviour change.
 - **1.5.1**: code split into `service/`, `components/` and
   `scripts/lib/`, with no behaviour change; more tests (cursor, setting
   changes, backend error paths); qmllint and shellcheck clean. Visual: the
@@ -164,3 +176,7 @@ Full notes on the [Releases](https://github.com/Loafer19/omarchy-yet-another-not
 omarchy plugin remove yoyo.notification-center
 rm -rf ~/.local/state/omarchy/yoyo.notification-center
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
