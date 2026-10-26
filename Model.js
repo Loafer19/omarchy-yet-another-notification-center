@@ -634,3 +634,27 @@ function noticeIdentity(row) {
   if (summary) return app + " \u00b7 " + summary
   return app
 }
+
+// What changing setting row ROW by DELTA (a key press or click) does:
+// { key, value } for settings.json, plus play: true for a sound, or
+// { app, value } for one app's sound; null when nothing changes.
+var NUDGE_SOUNDS = ["defaultSound", "soundLow", "soundNormal", "soundCritical"]
+function settingNudge(row, cfg, delta) {
+  if (!row) return null
+  if (row.kind === "toggle") return { key: row.key, value: !(cfg[row.key]) }
+  if (row.kind === "step") {
+    var min = Number(row.min || 1)
+    var max = Number(row.max || 100)
+    var step = Number(row.step || 1)
+    return { key: row.key, value: clampInt(Number(cfg[row.key] || min) + delta * step, min, max, min) }
+  }
+  if (row.kind === "enum" && enumList(row.key).length)
+    return { key: row.key, value: cycle(enumList(row.key), cfg[row.key], delta) }
+  if (row.kind === "enum" && NUDGE_SOUNDS.indexOf(row.key) >= 0)
+    return { key: row.key, value: cycle(SOUND_IDS, cfg[row.key], delta), play: true }
+  if (row.kind === "appSound") {
+    var cur = (cfg.appSounds && cfg.appSounds[row.app]) ? cfg.appSounds[row.app] : "inherit"
+    return { app: row.app, value: cycle(["inherit"].concat(SOUND_IDS), cur, delta) }
+  }
+  return null
+}

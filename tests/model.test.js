@@ -11,6 +11,10 @@ const ctx = { Defaults: { CONFIG: dctx.CONFIG } }
 vm.createContext(ctx)
 vm.runInContext(strip(fs.readFileSync(path.join(dir, "Model.js"), "utf8")), ctx)
 const M = ctx
+const nctx = {}
+vm.createContext(nctx)
+vm.runInContext(strip(fs.readFileSync(path.join(dir, "Nav.js"), "utf8")), nctx)
+const N = nctx
 let pass = 0, fail = 0
 function eq(label, got, want) {
   const g = JSON.stringify(got), w = JSON.stringify(want)
@@ -258,6 +262,50 @@ eq("rowFor: link sanitised", [M.rowFor({ key: "a", link: "https://x.org/" }, 0).
 const ref = { actions: [{ identifier: "default", text: "" }, { identifier: "reply", text: "Reply" }, { identifier: "", text: "x" }] }
 eq("liveActions: identifiers and labels", plain(M.liveActions(ref)), [{ id: "default", text: "default" }, { id: "reply", text: "Reply" }])
 eq("hasLiveAction", [M.hasLiveAction(ref, "default"), M.hasLiveAction(ref, "nope"), M.hasLiveAction(null, "default")], [true, false, false])
+
+// --- keyboard cursor (Nav.js) -------------------------------------------------
+const TABS = [{ key: "history" }, { key: "trash" }, { key: "settings" }]
+const CHIPS = [{ key: "all" }, { key: "critical" }, { key: "normal" }, { key: "low" }]
+const nav = (o) => Object.assign({ tabs: TABS, activeTab: "history", chips: CHIPS, filterKey: "normal", count: 3 }, o || {})
+const at = (section, index) => ({ section, index })
+eq("indexOfKey: found / missing -> 0", [N.indexOfKey(CHIPS, "low"), N.indexOfKey(CHIPS, "nope"), N.indexOfKey([], "x")], [3, 0, 0])
+eq("clampIndex", [N.clampIndex(-1, 3), N.clampIndex(5, 3), N.clampIndex(1, 3), N.clampIndex(4, 0)], [0, 2, 1, 0])
+eq("start: rows first", plain(N.start(nav())), at("rows", 0))
+eq("start: no rows -> active chip", plain(N.start(nav({ count: 0 }))), at("filters", 2))
+eq("start: no rows, no chips -> active tab", plain(N.start(nav({ count: 0, chips: [], activeTab: "trash" }))), at("tabs", 1))
+eq("cycleTab wraps both ways", [plain(N.cycleTab(nav(), -1)), plain(N.cycleTab(nav({ activeTab: "settings" }), 1))],
+  [{ section: "tabs", index: 2, tab: "settings" }, { section: "tabs", index: 0, tab: "history" }])
+eq("down from tabs -> active chip", plain(N.move(at("tabs", 0), 0, 1, nav())), at("filters", 2))
+eq("down from tabs, no chips -> rows", plain(N.move(at("tabs", 1), 0, 1, nav({ chips: [] }))), at("rows", 0))
+eq("down from tabs, nothing below -> stays", plain(N.move(at("tabs", 1), 0, 1, nav({ chips: [], count: 0 }))), at("tabs", 1))
+eq("up from tabs -> stays", plain(N.move(at("tabs", 1), 0, -1, nav())), at("tabs", 1))
+eq("down from chips -> first row", plain(N.move(at("filters", 1), 0, 1, nav())), at("rows", 0))
+eq("down from chips, no rows -> stays", plain(N.move(at("filters", 1), 0, 1, nav({ count: 0 }))), at("filters", 1))
+eq("up from chips -> active tab", plain(N.move(at("filters", 1), 0, -1, nav({ activeTab: "settings" }))), at("tabs", 2))
+eq("down in rows stops at the last", [plain(N.move(at("rows", 1), 0, 1, nav())), plain(N.move(at("rows", 2), 0, 1, nav()))], [at("rows", 2), at("rows", 2)])
+eq("up in rows", plain(N.move(at("rows", 2), 0, -1, nav())), at("rows", 1))
+eq("up from the first row -> active chip", plain(N.move(at("rows", 0), 0, -1, nav())), at("filters", 2))
+eq("up from the first row, no chips -> active tab", plain(N.move(at("rows", 0), 0, -1, nav({ chips: [], activeTab: "trash" }))), at("tabs", 1))
+eq("left/right on tabs switches tab (clamped)", [plain(N.move(at("tabs", 0), 1, 0, nav())), plain(N.move(at("tabs", 0), -1, 0, nav()))],
+  [{ section: "tabs", index: 1, tab: "trash" }, { section: "tabs", index: 0, tab: "history" }])
+eq("left/right on chips applies the chip", plain(N.move(at("filters", 3), 1, 0, nav())), { section: "filters", index: 3, filter: "low" })
+eq("left/right on a settings row nudges it", plain(N.move(at("rows", 1), -1, 0, nav({ activeTab: "settings" }))), { section: "rows", index: 1, nudge: -1 })
+eq("left/right on a history row does nothing", plain(N.move(at("rows", 1), 1, 0, nav())), at("rows", 1))
+eq("no direction does nothing", plain(N.move(at("rows", 1), 0, 0, nav())), at("rows", 1))
+
+// --- settingNudge -------------------------------------------------------------
+const srow = (key, filter) => M.settingRows(M.DEFAULTS, filter || "general", []).filter(r => r.key === key)[0]
+eq("nudge: toggle flips", plain(M.settingNudge(srow("showBody"), { showBody: true }, 1)), { key: "showBody", value: false })
+const dl = srow("displayLimit")
+eq("nudge: step moves by step, clamped", [M.settingNudge(dl, { displayLimit: dl.min }, -1).value, M.settingNudge(dl, { displayLimit: dl.max }, 1).value, M.settingNudge(dl, { displayLimit: dl.min }, 1).value],
+  [dl.min, dl.max, dl.min + dl.step])
+eq("nudge: enum cycles", plain(M.settingNudge(srow("badge"), { badge: "Dot" }, 1)).key, "badge")
+eq("nudge: enum value is one of the list", M.ENUMS.badge.indexOf(M.settingNudge(srow("badge"), { badge: "Dot" }, 1).value) >= 0, true)
+const sn = M.settingNudge(srow("soundNormal", "sound"), M.DEFAULTS, 1)
+eq("nudge: a sound plays", [sn.key, sn.play, M.SOUND_IDS.indexOf(sn.value) >= 0], ["soundNormal", true, true])
+const an = M.settingNudge({ kind: "appSound", app: "Slack" }, { appSounds: {} }, 1)
+eq("nudge: app sound starts from inherit", [an.app, an.value], ["Slack", M.cycle(["inherit"].concat(M.SOUND_IDS), "inherit", 1)])
+eq("nudge: nothing for no row / unknown kind", [M.settingNudge(null, {}, 1), M.settingNudge({ kind: "x" }, {}, 1)], [null, null])
 
 console.log(`\npassed ${pass}, failed ${fail}`)
 process.exit(fail ? 1 : 0)
