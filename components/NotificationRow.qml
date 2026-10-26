@@ -153,7 +153,7 @@ CursorSurface {
         text: root.glyph !== "" ? root.glyph : "\uDB80\uDC9A"
         color: root.urgencyColor
         font.family: Theme.fontFamily
-        font.pixelSize: Style.font.icon // qmllint disable missing-property
+        font.pixelSize: Theme.icon
       }
     }
 
@@ -228,14 +228,14 @@ CursorSurface {
       ? Util.alpha(Theme.accent, Style.hoverFillAlpha)
       : (copyMouse.containsMouse
         ? Theme.hoverFill
-        : Theme.tint(Theme.fg, 0.06))
+        : Theme.buttonFill)
 
     Text {
       anchors.centerIn: parent
       text: root.copied ? "󰄬" : "󰆏"
       color: root.copied ? Theme.accent : Theme.fg
       font.family: Theme.fontFamily
-      font.pixelSize: Style.font.icon // qmllint disable missing-property
+      font.pixelSize: Theme.icon
     }
 
     MouseArea {
@@ -266,14 +266,14 @@ CursorSurface {
     opacity: root.actionEnabled ? 1.0 : 0.45
     color: actionMouse.containsMouse && root.actionEnabled
       ? (root.danger ? Util.alpha(Theme.urgent, Style.hoverFillAlpha) : Theme.hoverFill)
-      : Theme.tint(Theme.fg, 0.06)
+      : Theme.buttonFill
 
     Text {
       anchors.centerIn: parent
       text: root.danger ? "\uDB80\uDDB4" : "\uDB80\uDC6F"
       color: actionMouse.containsMouse && root.danger ? Theme.urgent : Theme.fg
       font.family: Theme.fontFamily
-      font.pixelSize: Style.font.icon // qmllint disable missing-property
+      font.pixelSize: Theme.icon
     }
 
     MouseArea {

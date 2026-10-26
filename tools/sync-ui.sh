@@ -32,7 +32,9 @@ fetch() { # fetch REF DIR -> checks REF out in DIR (needs ui/)
 }
 
 check() {
-  [ -f "$dest/VERSION" ] && [ -f "$dest/MANIFEST" ] || die "vendor/yoyo-ui is missing or was not created by sync-ui.sh"
+  if ! { [ -f "$dest/VERSION" ] && [ -f "$dest/MANIFEST" ]; }; then
+    die "vendor/yoyo-ui is missing or was not created by sync-ui.sh"
+  fi
   if ! diff -u "$dest/MANIFEST" <(manifest "$dest") >&2; then
     die "vendor/yoyo-ui differs from its MANIFEST: it was edited by hand. Change omarchy-yoyo-ui upstream and re-run tools/sync-ui.sh <ref>."
   fi

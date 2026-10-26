@@ -321,7 +321,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(480))
+    contentWidth: panel.fittedContentWidth(Theme.panelNarrow)
     contentHeight: panel.fittedContentHeight(Style.space(560))
 
     PanelKeyCatcher {
@@ -354,7 +354,7 @@ Panel {
           onChipHovered: function(index) { root.setTabsCursor(index) }
         }
 
-        Rectangle { width: parent.width; height: Style.spacing.hairline; color: Theme.line } // qmllint disable missing-property
+        Rectangle { width: parent.width; height: Theme.hairline; color: Theme.line }
 
         Yanc.HistoryBar {
           width: parent.width
