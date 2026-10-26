@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "vendor/yoyo-ui"
@@ -45,15 +44,8 @@ BarWidget {
     }
   }
 
-  IpcHandler {
-    target: "yoyo.notification-center"
-
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
-  }
+  // No IpcHandler here: the bar builds this widget once per monitor, and a
+  // target may have only one handler, so Service.qml owns it.
 
   BarIconButton {
     id: button

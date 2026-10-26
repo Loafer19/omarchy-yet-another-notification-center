@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import "Model.js" as Model
 import "service"
 
@@ -358,6 +359,28 @@ Item {
         if (data.ok === true) root.lastSeen = Number(data.seen) || 0
       } catch (e) {}
     }
+  }
+
+  // The plugin's one IPC target (`qs ipc call yoyo.notification-center
+  // toggle`). Here, not in BarWidget.qml: the bar builds a widget per monitor,
+  // and every extra handler for the target is "registered but will not be
+  // used". Calls go through the shell, which opens the bar's panel on the
+  // focused monitor (as `omarchy-shell shell toggle yoyo.notification-center`).
+  readonly property string pluginId: "yoyo.notification-center"
+  function host() {
+    var s = root.shell
+    return s && typeof s.summon === "function" && typeof s.hide === "function"
+      && typeof s.toggle === "function" ? s : null
+  }
+
+  IpcHandler {
+    target: "yoyo.notification-center"
+
+    function open(): void { var s = root.host(); if (s) s.summon(root.pluginId, "") }
+    function close(): void { var s = root.host(); if (s) s.hide(root.pluginId) }
+    function show(): void { var s = root.host(); if (s) s.summon(root.pluginId, "") }
+    function hide(): void { var s = root.host(); if (s) s.hide(root.pluginId) }
+    function toggle(): void { var s = root.host(); if (s) s.toggle(root.pluginId, "") }
   }
 
   Component.onCompleted: {
