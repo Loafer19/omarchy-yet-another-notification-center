@@ -145,7 +145,7 @@ Lint (both clean): `qmllint` on the plugin's own `.qml` files, and
 
 Full notes on the [Releases](https://github.com/Loafer19/omarchy-yet-another-notification-center/releases) page.
 
-- **Unreleased**: code split into `service/`, `components/` and
+- **1.5.1**: code split into `service/`, `components/` and
   `scripts/lib/`, with no behaviour change; more tests (cursor, setting
   changes, backend error paths); qmllint and shellcheck clean. Visual: the
   History and Trash header lines sit flush with the tabs and cards, and
