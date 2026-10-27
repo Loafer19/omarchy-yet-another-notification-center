@@ -154,6 +154,11 @@ read.
 
 Full notes on the [Releases](https://github.com/Loafer19/omarchy-yet-another-notification-center/releases) page.
 
+- **1.5.4**: security: Copy hands the text to `wl-copy` on stdin instead of
+  its command line, so it no longer shows in `/proc/<pid>/cmdline` of the
+  clipboard owner (readable by other local users).
+- **1.5.3**: one IPC handler, owned by the service (no duplicate-handler
+  warning with several monitors).
 - **1.5.2**: marketplace readiness: screenshots re-rendered offscreen from
   made-up notifications (`tools/render-previews.sh`), CI on every push, a
   License section; no behaviour change.

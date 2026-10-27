@@ -160,6 +160,15 @@ eq("every action the QML runs has a label", ["dismiss", "restore", "purge", "cle
 const qml = ["Service.qml", "Panel.qml"].map(f => fs.readFileSync(path.join(dir, f), "utf8")).join("\n")
 eq("no fire-and-forget execDetached left in Service/Panel", (qml.match(/execDetached/g) || []).length, 0)
 eq("every run(\"…\") action has a label", [...qml.matchAll(/\brun\("([a-z-]+)"/g)].map(m => m[1]).filter(a => !M.ACTION_LABELS[a]), [])
+// Notification text never goes into argv (/proc/<pid>/cmdline is world-readable;
+// wl-copy's clipboard owner lives on): Copy hands it to wl-copy on stdin.
+const opener = fs.readFileSync(path.join(dir, "components", "RowOpener.qml"), "utf8")
+const copyArgv = (opener.match(/run\("copy",\s*(\[[^\]]*\])/) || ["", ""])[1]
+eq("copy: wl-copy argv is string literals only (no text)", /^\[\s*"wl-copy"(\s*,\s*"[^"]*")*\s*\]$/.test(copyArgv), true)
+eq("copy: text passed as run() input (stdin)", /\},\s*text\)/.test(opener), true)
+const allQml = cp.execSync("git ls-files '*.qml'", { cwd: dir, encoding: "utf8" }).split("\n").filter(Boolean)
+  .map(f => fs.readFileSync(path.join(dir, f), "utf8")).join("\n")
+eq("no shell wrapper around wl-copy", /sh"\s*,\s*"-c"[^\n]*wl-copy/.test(allQml), false)
 
 // --- settings: one source of truth, same rules in JS and the backend ---------------
 const settingsFile = path.join(tmp, "store", "settings.json")

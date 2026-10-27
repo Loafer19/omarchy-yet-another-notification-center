@@ -84,7 +84,8 @@ Item {
 
   // Run one checked command (ActionRunner): failures are logged and raised
   // through actionFailed; done(res) always runs with { ok, error, data }.
-  function run(action, command, done) { runner.run(action, command, done) }
+  // input, if given, goes to the command's stdin (keep user text out of argv).
+  function run(action, command, done, input) { runner.run(action, command, done, input) }
   function reportFailure(action, error) { runner.reportFailure(action, error) }
 
   ActionRunner {

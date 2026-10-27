@@ -100,10 +100,13 @@ Item {
     if (!row || !s) return
     var text = Model.copyTextFor(row)
     if (!text) return
-    s.run("copy", ["wl-copy", "--", text], function(res) {
+    // The text goes to wl-copy on stdin, not in argv: wl-copy's background
+    // clipboard owner would keep argv in /proc/<pid>/cmdline, readable by
+    // other local users.
+    s.run("copy", ["wl-copy", "--type", "text/plain;charset=utf-8"], function(res) {
       var wrap = list && list.itemAtIndex ? list.itemAtIndex(index) : null
       if (wrap && wrap.copyFinished) wrap.copyFinished(res.ok, res.error)
-    })
+    }, text)
   }
 
   Process {

@@ -7,6 +7,9 @@ import "../Model.js" as Model
 // Checked store/helper calls: exit code and {"ok":false} both count as
 // failure. Failures are logged and raised through failed(); done(res)
 // always runs with { ok, error, data } so callers can roll back.
+// input (optional string) is written to the process's stdin, which is then
+// closed: user content (notification text) goes there, never into argv,
+// where /proc/<pid>/cmdline shows it to every local user.
 Item {
   id: runner
   visible: false
@@ -15,8 +18,12 @@ Item {
   signal failed(string action, string message)
   property string lastError: ""
 
-  function run(action, command, done) {
-    var p = actionProcess.createObject(runner, { action: action, done: done || null }) as Process
+  function run(action, command, done, input) {
+    var piped = typeof input === "string"
+    var p = actionProcess.createObject(runner, {
+      action: action, done: done || null,
+      input: piped ? input : "", stdinEnabled: piped
+    }) as Process
     if (!p) {
       runner.reportFailure(action, "could not start")
       if (typeof done === "function") done({ ok: false, error: "could not start", data: null })
@@ -56,6 +63,7 @@ Item {
       property bool outDone: false
       property bool errDone: false
       property bool finished: false
+      property string input: ""
       function maybeFinish(force) {
         if (proc.finished) return
         if (!force && !(proc.exited && proc.outDone && proc.errDone)) return
@@ -64,6 +72,14 @@ Item {
       }
       stdout: StdioCollector { id: outText; onStreamFinished: { proc.outDone = true; proc.maybeFinish(false) } }
       stderr: StdioCollector { id: errText; onStreamFinished: { proc.errDone = true; proc.maybeFinish(false) } }
+      // stdin is only open when run() was given input: write it, then close
+      // stdin (closeWriteChannel flushes first) so the reader sees EOF.
+      onStarted: {
+        if (!proc.stdinEnabled) return
+        proc.write(proc.input)
+        proc.input = ""
+        proc.stdinEnabled = false
+      }
       onExited: function(exitCode) { proc.exited = true; proc.code = exitCode; proc.maybeFinish(false) }
       onRunningChanged: if (!proc.running) grace.start()
       property Timer grace: Timer { interval: 1500; onTriggered: proc.maybeFinish(true) }
